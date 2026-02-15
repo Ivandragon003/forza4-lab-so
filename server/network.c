@@ -74,6 +74,8 @@ void* gestisci_client(void* arg) {
             if (risultato == 0) {
                 Partita* partita = trova_partita(id_partita);
                 
+                client->id_partita_corrente = id_partita;
+                
                 invia_messaggio(client->socket, "Richiesta inviata. In attesa di accettazione...\n");
                 
                 char notifica[300];
@@ -156,7 +158,10 @@ void* gestisci_client(void* arg) {
                     invia_messaggio(client->socket, "Non è il tuo turno!\n");
                     continue;
                 }
-                
+                if (strlen(buffer) != 1 || buffer[0] < '0' || buffer[0] > '6') {
+                    invia_messaggio(client->socket, "Input non valido! Inserisci un numero da 0 a 6: ");
+                    continue;
+                }
                 int colonna = atoi(buffer);
                 char simbolo_giocatore = e_giocatore1 ? 'R' : 'G';
                 
@@ -179,7 +184,9 @@ void* gestisci_client(void* arg) {
                     invia_messaggio(client->socket, "HAI VINTO! Congratulazioni!\n");
                     invia_messaggio(e_giocatore1 ? partita->socket_giocatore2 : partita->socket_giocatore1, 
                                   "Hai perso. Riprova!\n");
-                    
+                    invia_messaggio(partita->socket_giocatore1, "Puoi creare o unirti a una nuova partita.\n");
+                    invia_messaggio(partita->socket_giocatore2, "Puoi creare o unirti a una nuova partita.\n");
+
                     client->id_partita_corrente = 0;
                     continue;
                 }
@@ -188,6 +195,10 @@ void* gestisci_client(void* arg) {
                     partita->stato = PARTITA_TERMINATA;
                     invia_messaggio(partita->socket_giocatore1, "PAREGGIO!\n");
                     invia_messaggio(partita->socket_giocatore2, "PAREGGIO!\n");
+
+                    invia_messaggio(partita->socket_giocatore1, "Puoi creare o unirti a una nuova partita.\n");
+                    invia_messaggio(partita->socket_giocatore2, "Puoi creare o unirti a una nuova partita.\n");
+
                     client->id_partita_corrente = 0;
                     continue;
                 }
