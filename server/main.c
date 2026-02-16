@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <arpa/inet.h>
+#include <signal.h>
 #include "network.h"
 #include "game.h"
 
@@ -11,7 +12,8 @@ int main() {
     int server_fd;
     struct sockaddr_in indirizzo;
     int addrlen = sizeof(indirizzo);
-    
+    signal(SIGPIPE, SIG_IGN);
+
     // Creazione socket
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
         perror("Errore creazione socket");

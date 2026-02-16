@@ -124,7 +124,7 @@ int crea_partita(int socket_giocatore, char* nome_giocatore) {
     inizializza_griglia(partita->griglia);
     partita->socket_giocatore1 = socket_giocatore;
     partita->socket_giocatore2 = -1;
-    strcpy(partita->nome_giocatore1, nome_giocatore);
+    snprintf(partita->nome_giocatore1, sizeof(partita->nome_giocatore1), "%s", nome_giocatore);
     partita->nome_giocatore2[0] = '\0';
     partita->turno_corrente = 1;
     partita->stato = PARTITA_IN_ATTESA;
@@ -163,7 +163,7 @@ int richiedi_partita(int id_partita, int socket_giocatore, char* nome_giocatore)
     
     // Salva la richiesta
     partita->socket_richiedente = socket_giocatore;
-    strcpy(partita->nome_richiedente, nome_giocatore);
+    snprintf(partita->nome_richiedente, sizeof(partita->nome_richiedente), "%s", nome_giocatore);
     partita->stato = PARTITA_RICHIESTA_PENDENTE;
     
     return 0;  
@@ -178,7 +178,7 @@ int accetta_richiesta(int id_partita) {
     
     // sposta il richiedente in giocatore2
     partita->socket_giocatore2 = partita->socket_richiedente;
-    strcpy(partita->nome_giocatore2, partita->nome_richiedente);
+    snprintf(partita->nome_giocatore2, sizeof(partita->nome_giocatore2), "%s", partita->nome_richiedente);
     partita->stato = PARTITA_IN_CORSO;
     
     return 0;
@@ -201,16 +201,27 @@ int rifiuta_richiesta(int id_partita) {
 
 char* lista_partite() {
     static char buffer[2048];
+    size_t usati = 0;
+    size_t capienza = sizeof(buffer);
     buffer[0] = '\0';
     
     if (contatore_partite == 0) {
-        strcpy(buffer, "Nessuna partita disponibile.\n");
+        snprintf(buffer, capienza, "Nessuna partita disponibile.\n");
         return buffer;
     }
     
-    strcat(buffer, "Partite disponibili:\n");
+    int scritti = snprintf(buffer + usati, capienza - usati, "Partite disponibili:\n");
+    if (scritti < 0) {
+        buffer[0] = '\0';
+        return buffer;
+    }
+    if ((size_t)scritti >= capienza - usati) {
+        buffer[capienza - 1] = '\0';
+        return buffer;
+    }
+    usati += (size_t)scritti;
+
     for (int i = 0; i < contatore_partite; i++) {
-        char riga[200];
         const char* stato_str;
         
         switch(partite[i].stato) {
@@ -227,11 +238,29 @@ char* lista_partite() {
                 stato_str = "Sconosciuto";
         }
         
-        sprintf(riga, "ID: %d | Creata da: %s | Stato: %s\n",
-                partite[i].id_partita,
-                partite[i].nome_giocatore1,
-                stato_str);
-        strcat(buffer, riga);
+        if (usati >= capienza - 1) {
+            break;
+        }
+
+        scritti = snprintf(
+            buffer + usati,
+            capienza - usati,
+            "ID: %d | Creata da: %s | Stato: %s\n",
+            partite[i].id_partita,
+            partite[i].nome_giocatore1,
+            stato_str
+        );
+
+        if (scritti < 0) {
+            buffer[0] = '\0';
+            return buffer;
+        }
+        if ((size_t)scritti >= capienza - usati) {
+            usati = capienza - 1;
+            buffer[usati] = '\0';
+            break;
+        }
+        usati += (size_t)scritti;
     }
     
     return buffer;

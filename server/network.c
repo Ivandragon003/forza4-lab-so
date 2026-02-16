@@ -7,7 +7,14 @@
 #include <sys/socket.h>
 
 void invia_messaggio(int socket, const char* messaggio) {
-    send(socket, messaggio, strlen(messaggio), 0);
+    if (socket < 0 || messaggio == NULL) {
+        return;
+    }
+
+    ssize_t inviati = send(socket, messaggio, strlen(messaggio), 0);
+    if (inviati < 0) {
+        perror("Errore invio messaggio");
+    }
 }
 
 int ricevi_messaggio(int socket, char* buffer) {
@@ -32,7 +39,7 @@ void* gestisci_client(void* arg) {
         free(client);
         return NULL;
     }
-    strcpy(client->nome, buffer);
+    snprintf(client->nome, sizeof(client->nome), "%s", buffer);
     
     char benvenuto[400];
     sprintf(benvenuto, "Ciao %s! Comandi disponibili:\n", client->nome);
@@ -134,8 +141,11 @@ void* gestisci_client(void* arg) {
             Partita* partita = trova_partita(id_partita);
             
             if (partita && partita->socket_giocatore1 == client->socket) {
+                int socket_richiedente = partita->socket_richiedente;
                 if (rifiuta_richiesta(id_partita) == 0) {
-                    invia_messaggio(partita->socket_richiedente, "La tua richiesta è stata rifiutata.\n");
+                    if (socket_richiedente > 0) {
+                        invia_messaggio(socket_richiedente, "La tua richiesta e' stata rifiutata.\n");
+                    }
                     invia_messaggio(client->socket, "Hai rifiutato la richiesta.\n");
                 } else {
                     invia_messaggio(client->socket, "Errore nel rifiuto.\n");
@@ -150,6 +160,10 @@ void* gestisci_client(void* arg) {
             
         } else if (client->id_partita_corrente > 0) {
             Partita* partita = trova_partita(client->id_partita_corrente);
+            if (!partita || partita->stato != PARTITA_IN_CORSO) {
+                client->id_partita_corrente = 0;
+                continue;
+            }
             
             if (partita && partita->stato == PARTITA_IN_CORSO) {
                 int e_giocatore1 = (client->socket == partita->socket_giocatore1);
@@ -219,6 +233,25 @@ void* gestisci_client(void* arg) {
         }
     }
     
+    if (client->id_partita_corrente > 0) {
+        Partita* partita = trova_partita(client->id_partita_corrente);
+        if (partita) {
+            if (partita->socket_giocatore1 == client->socket || partita->socket_giocatore2 == client->socket) {
+                partita->stato = PARTITA_TERMINATA;
+                int avversario = (partita->socket_giocatore1 == client->socket)
+                    ? partita->socket_giocatore2
+                    : partita->socket_giocatore1;
+                if (avversario > 0) {
+                    invia_messaggio(avversario, "L'altro giocatore si è disconnesso. Partita terminata.\n");
+                }
+            } else if (partita->socket_richiedente == client->socket) {
+                partita->socket_richiedente = -1;
+                partita->nome_richiedente[0] = '\0';
+                partita->stato = PARTITA_IN_ATTESA;
+            }
+        }
+    }
+
     printf("Client %s disconnesso\n", client->nome);
     close(client->socket);
     free(client);
