@@ -124,8 +124,10 @@ int crea_partita(int socket_giocatore, char* nome_giocatore) {
     inizializza_griglia(partita->griglia);
     partita->socket_giocatore1 = socket_giocatore;
     partita->socket_giocatore2 = -1;
+    partita->socket_richiedente = -1;
     snprintf(partita->nome_giocatore1, sizeof(partita->nome_giocatore1), "%s", nome_giocatore);
     partita->nome_giocatore2[0] = '\0';
+    partita->nome_richiedente[0] = '\0';
     partita->turno_corrente = 1;
     partita->stato = PARTITA_IN_ATTESA;
     partita->vincitore = 0;
@@ -151,6 +153,10 @@ int richiedi_partita(int id_partita, int socket_giocatore, char* nome_giocatore)
     
     if (partita == NULL) {
         return -1;  // Partita non trovata
+    }
+
+    if (partita->socket_giocatore1 == socket_giocatore) {
+        return -4;  // Il creatore non puo' richiedere la propria partita
     }
     
     if (partita->stato != PARTITA_IN_ATTESA) {
@@ -203,6 +209,7 @@ char* lista_partite() {
     static char buffer[2048];
     size_t usati = 0;
     size_t capienza = sizeof(buffer);
+    int partite_disponibili = 0;
     buffer[0] = '\0';
     
     if (contatore_partite == 0) {
@@ -222,22 +229,11 @@ char* lista_partite() {
     usati += (size_t)scritti;
 
     for (int i = 0; i < contatore_partite; i++) {
-        const char* stato_str;
-        
-        switch(partite[i].stato) {
-            case PARTITA_IN_ATTESA:
-                stato_str = "In attesa";
-                break;
-            case PARTITA_IN_CORSO:
-                stato_str = "In corso";
-                break;
-            case PARTITA_TERMINATA:
-                stato_str = "Terminata";
-                break;
-            default:
-                stato_str = "Sconosciuto";
+        if (partite[i].stato != PARTITA_IN_ATTESA) {
+            continue;
         }
-        
+        partite_disponibili++;
+
         if (usati >= capienza - 1) {
             break;
         }
@@ -245,10 +241,9 @@ char* lista_partite() {
         scritti = snprintf(
             buffer + usati,
             capienza - usati,
-            "ID: %d | Creata da: %s | Stato: %s\n",
+            "ID: %d | Creata da: %s | Stato: In attesa\n",
             partite[i].id_partita,
-            partite[i].nome_giocatore1,
-            stato_str
+            partite[i].nome_giocatore1
         );
 
         if (scritti < 0) {
@@ -261,6 +256,10 @@ char* lista_partite() {
             break;
         }
         usati += (size_t)scritti;
+    }
+
+    if (partite_disponibili == 0) {
+        snprintf(buffer, capienza, "Nessuna partita disponibile.\n");
     }
     
     return buffer;

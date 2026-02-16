@@ -37,7 +37,7 @@ int main() {
         exit(EXIT_FAILURE);
     }
     
-    // Listen
+  
     if (listen(server_fd, MAX_CLIENT) < 0) {
         perror("Errore listen");
         exit(EXIT_FAILURE);

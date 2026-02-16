@@ -6,6 +6,13 @@ public class Client {
     private static final String SERVER_HOST = "server";
     private static final int SERVER_PORT = 8080;
     
+    private static final String RESET = "\033[0m";
+    private static final String RED = "\033[31m";
+    private static final String YELLOW = "\033[33m";
+    private static final String GREEN = "\033[32m";
+    private static final String BLUE = "\033[36m";
+    private static final String BOLD = "\033[1m";
+    
     private Socket socket;
     private BufferedReader in;
     private PrintWriter out;
@@ -22,15 +29,12 @@ public class Client {
             in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
             out = new PrintWriter(socket.getOutputStream(), true);
             
-          
-          
-            System.out.println(" FORZA 4 - CLIENT");
-            System.out.println("Connesso al server!\n");
+            System.out.println(BLUE + "Connesso al server!" + RESET);
             
             avviaListener();
             
         } catch (IOException e) {
-            System.err.println("Errore di connessione al server: " + e.getMessage());
+            System.err.println("Errore di connessione: " + e.getMessage());
             System.exit(1);
         }
     }
@@ -44,7 +48,7 @@ public class Client {
                 }
             } catch (IOException e) {
                 if (!socket.isClosed()) {
-                    System.err.println("\nConnessione al server persa.");
+                    System.err.println("\nConnessione persa.");
                 }
             }
         });
@@ -52,21 +56,63 @@ public class Client {
     }
     
     private void gestisciMessaggioServer(String messaggio) {
-    if (messaggio.startsWith(">")) {
-        String contenuto = messaggio.substring(1).trim();
-        if (!contenuto.isEmpty()) {
-            System.out.println(contenuto);
+    
+        if (messaggio.trim().equals(">")) {
+            return;
         }
-    } else if (messaggio.contains("NOTIFICA")) {
-        System.out.println("\n" + messaggio);
-    } else if (messaggio.contains("È il tuo turno")) {
-        System.out.println("\n" + messaggio);
-    } else if (messaggio.contains("Aspetta")) {
-        System.out.println(messaggio);
-    } else {
-        System.out.println(messaggio);
+        
+       
+        if (messaggio.startsWith(">")) {
+            messaggio = messaggio.substring(1).trim();
+            if (messaggio.isEmpty()) {
+                return;
+            }
+        }
+        
+        
+        if (messaggio.contains("HAI VINTO")) {
+            System.out.println(GREEN + BOLD + messaggio + RESET);
+        } else if (messaggio.contains("perso")) {
+            System.out.println(RED + messaggio + RESET);
+        } else if (messaggio.contains("PAREGGIO")) {
+            System.out.println(YELLOW + BOLD + messaggio + RESET);
+        } else if (messaggio.contains("NOTIFICA")) {
+            System.out.println(BLUE + BOLD + messaggio + RESET);
+        } else if (eGriglia(messaggio)) {
+            System.out.println(coloraGriglia(messaggio));
+        } else {
+            System.out.println(messaggio);
+        }
     }
-}
+    
+    private boolean eGriglia(String testo) {
+        return testo.matches(".*[.RG]\\s+[.RG].*") || 
+               testo.matches("\\d\\s+\\d\\s+\\d.*");
+    }
+    
+    private String coloraGriglia(String riga) {
+        if (riga.matches("\\d\\s+\\d\\s+\\d.*")) {
+            return riga;
+        }
+        
+    
+        StringBuilder risultato = new StringBuilder();
+        for (int i = 0; i < riga.length(); i++) {
+            char c = riga.charAt(i);
+            
+            if (c == 'R' && (i == 0 || riga.charAt(i-1) == ' ') && 
+                (i == riga.length()-1 || riga.charAt(i+1) == ' ')) {
+                risultato.append(RED).append('R').append(RESET);
+            } else if (c == 'G' && (i == 0 || riga.charAt(i-1) == ' ') && 
+                       (i == riga.length()-1 || riga.charAt(i+1) == ' ')) {
+                risultato.append(YELLOW).append('G').append(RESET);
+            } else {
+                risultato.append(c);
+            }
+        }
+        
+        return risultato.toString();
+    }
     
     public void gioca() {
         try {
@@ -80,15 +126,15 @@ public class Client {
                         continue;
                     }
                     
-                    if (comando.equalsIgnoreCase("HELP") || comando.equals("?")) {
-                        mostraAiuto();
-                        continue;
+                    if (comando.equalsIgnoreCase("ABBANDONA")) {
+                        out.println("ABBANDONA");
+                        Thread.sleep(200);
+                        break;
                     }
                     
                     if (comando.equalsIgnoreCase("ESCI")) {
                         out.println("ESCI");
-                        Thread.sleep(200);
-                        break;
+                        continue;
                     }
                     
                     out.println(comando);
@@ -102,19 +148,6 @@ public class Client {
         }
     }
     
-    private void mostraAiuto() {
-    System.out.println("\n=== COMANDI DISPONIBILI ===");
-    System.out.println("CREA           - Crea una nuova partita");
-    System.out.println("LISTA          - Mostra partite disponibili");
-    System.out.println("ENTRA <id>     - Richiedi di unirti alla partita");
-    System.out.println("ACCETTA <id>   - Accetta richiesta (creatore)");
-    System.out.println("RIFIUTA <id>   - Rifiuta richiesta (creatore)");
-    System.out.println("0-6            - Scegli colonna durante il gioco");
-    System.out.println("HELP o ?       - Mostra questo messaggio");
-    System.out.println("ESCI           - Disconnetti dal server");
-    System.out.println("===========================\n");
-}
-    
     private void chiudiConnessione() {
         try {
             if (listenerThread != null) {
@@ -126,9 +159,9 @@ public class Client {
             if (scanner != null) {
                 scanner.close();
             }
-            System.out.println("\nConnessione chiusa. Arrivederci!");
+            System.out.println("\nConnessione chiusa.");
         } catch (IOException e) {
-            System.err.println("Errore durante la chiusura: " + e.getMessage());
+            System.err.println("Errore chiusura: " + e.getMessage());
         }
     }
     

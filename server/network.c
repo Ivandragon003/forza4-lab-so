@@ -6,6 +6,41 @@
 #include <unistd.h>
 #include <sys/socket.h>
 
+static int trova_partita_in_corso_client(int socket_client) {
+    for (int i = 0; i < contatore_partite; i++) {
+        Partita* partita = &partite[i];
+        if (partita->stato == PARTITA_IN_CORSO &&
+            (partita->socket_giocatore1 == socket_client ||
+             partita->socket_giocatore2 == socket_client)) {
+            return partita->id_partita;
+        }
+    }
+    return 0;
+}
+
+static Partita* trova_partita_in_corso_per_socket(int socket_client) {
+    for (int i = 0; i < contatore_partite; i++) {
+        Partita* partita = &partite[i];
+        if (partita->stato == PARTITA_IN_CORSO &&
+            (partita->socket_giocatore1 == socket_client ||
+             partita->socket_giocatore2 == socket_client)) {
+            return partita;
+        }
+    }
+    return NULL;
+}
+
+static int trova_richiesta_pendente_client(int socket_client) {
+    for (int i = 0; i < contatore_partite; i++) {
+        Partita* partita = &partite[i];
+        if (partita->stato == PARTITA_RICHIESTA_PENDENTE &&
+            partita->socket_richiedente == socket_client) {
+            return partita->id_partita;
+        }
+    }
+    return 0;
+}
+
 void invia_messaggio(int socket, const char* messaggio) {
     if (socket < 0 || messaggio == NULL) {
         return;
@@ -32,7 +67,8 @@ void* gestisci_client(void* arg) {
     
     printf("Client connesso (socket: %d)\n", client->socket);
     
-    invia_messaggio(client->socket, "Benvenuto a Forza 4!\nInserisci il tuo nome: ");
+    invia_messaggio(client->socket, "Benvenuto a Forza 4!\n");
+    invia_messaggio(client->socket, "Inserisci il tuo nome:\n");
     
     if (ricevi_messaggio(client->socket, buffer) <= 0) {
         close(client->socket);
@@ -48,7 +84,8 @@ void* gestisci_client(void* arg) {
     strcat(benvenuto, "ENTRA <id> - Richiedi di unirti a una partita\n");
     strcat(benvenuto, "ACCETTA <id> - Accetta richiesta (solo creatore)\n");
     strcat(benvenuto, "RIFIUTA <id> - Rifiuta richiesta (solo creatore)\n");
-    strcat(benvenuto, "ESCI - Esci dal gioco\n");
+    strcat(benvenuto, "ABBANDONA - Abbandona la partita corrente e esci\n");
+    strcat(benvenuto, "ESCI - Esci dal gioco (solo fuori partita)\n");
     invia_messaggio(client->socket, benvenuto);
     
     while (1) {
@@ -61,9 +98,19 @@ void* gestisci_client(void* arg) {
         printf("Ricevuto da %s: %s\n", client->nome, buffer);
         
         if (strcmp(buffer, "CREA") == 0) {
+            int id_in_corso = trova_partita_in_corso_client(client->socket);
+            if (id_in_corso > 0) {
+                char msg[170];
+                snprintf(msg, sizeof(msg),
+                         "Stai gia' giocando la partita ID %d. "
+                         "Non puoi crearne un'altra finche' non termina.\n",
+                         id_in_corso);
+                invia_messaggio(client->socket, msg);
+                continue;
+            }
+
             int id_partita = crea_partita(client->socket, client->nome);
             if (id_partita > 0) {
-                client->id_partita_corrente = id_partita;
                 char msg[100];
                 sprintf(msg, "Partita creata! ID: %d\nIn attesa di un avversario...\n", id_partita);
                 invia_messaggio(client->socket, msg);
@@ -75,6 +122,27 @@ void* gestisci_client(void* arg) {
             invia_messaggio(client->socket, lista_partite());
             
         } else if (strncmp(buffer, "ENTRA ", 6) == 0) {
+            int id_in_corso = trova_partita_in_corso_client(client->socket);
+            if (id_in_corso > 0) {
+                char msg[160];
+                snprintf(msg, sizeof(msg),
+                         "Sei gia' coinvolto nella partita ID %d. "
+                         "Non puoi entrare in un'altra partita.\n",
+                         id_in_corso);
+                invia_messaggio(client->socket, msg);
+                continue;
+            }
+            int id_pendente = trova_richiesta_pendente_client(client->socket);
+            if (id_pendente > 0) {
+                char msg[180];
+                snprintf(msg, sizeof(msg),
+                         "Hai gia' una richiesta pendente sulla partita ID %d. "
+                         "Attendi ACCETTA/RIFIUTA prima di entrare altrove.\n",
+                         id_pendente);
+                invia_messaggio(client->socket, msg);
+                continue;
+            }
+
             int id_partita = atoi(buffer + 6);
             int risultato = richiedi_partita(id_partita, client->socket, client->nome);
             
@@ -100,12 +168,25 @@ void* gestisci_client(void* arg) {
                 invia_messaggio(client->socket, "Partita non trovata.\n");
             } else if (risultato == -2) {
                 invia_messaggio(client->socket, "Partita non disponibile.\n");
+            } else if (risultato == -4) {
+                invia_messaggio(client->socket, "Non puoi entrare nella tua stessa partita.\n");
             } else {
                 invia_messaggio(client->socket, "Partita già piena.\n");
             }
             
         } else if (strncmp(buffer, "ACCETTA ", 8) == 0) {
             int id_partita = atoi(buffer + 8);
+            int id_in_corso = trova_partita_in_corso_client(client->socket);
+            if (id_in_corso > 0 && id_in_corso != id_partita) {
+                char msg[170];
+                snprintf(msg, sizeof(msg),
+                         "Stai gia' giocando/gestendo la partita ID %d. "
+                         "Non puoi accettare richieste su altre partite.\n",
+                         id_in_corso);
+                invia_messaggio(client->socket, msg);
+                continue;
+            }
+
             Partita* partita = trova_partita(id_partita);
             
             if (partita && partita->socket_giocatore1 == client->socket) {
@@ -154,7 +235,35 @@ void* gestisci_client(void* arg) {
                 invia_messaggio(client->socket, "Non sei il creatore di questa partita.\n");
             }
             
+        } else if (strcmp(buffer, "ABBANDONA") == 0) {
+            Partita* partita_in_corso = trova_partita_in_corso_per_socket(client->socket);
+            if (partita_in_corso != NULL) {
+                int e_giocatore1 = (partita_in_corso->socket_giocatore1 == client->socket);
+                int avversario = e_giocatore1 ? partita_in_corso->socket_giocatore2
+                                              : partita_in_corso->socket_giocatore1;
+
+                partita_in_corso->stato = PARTITA_TERMINATA;
+                partita_in_corso->vincitore = e_giocatore1 ? 2 : 1;
+
+                invia_messaggio(client->socket, "Hai abbandonato la partita. Hai perso.\n");
+                if (avversario > 0) {
+                    invia_messaggio(avversario, "L'altro giocatore ha abbandonato. Hai vinto per resa.\n");
+                    invia_messaggio(avversario, "Puoi creare o unirti a una nuova partita.\n");
+                }
+                client->id_partita_corrente = 0;
+            } else {
+                invia_messaggio(client->socket, "Non sei in una partita in corso.\n");
+            }
+
+            invia_messaggio(client->socket, "Arrivederci!\n");
+            break;
         } else if (strcmp(buffer, "ESCI") == 0) {
+            int id_in_corso = trova_partita_in_corso_client(client->socket);
+            if (id_in_corso > 0) {
+                invia_messaggio(client->socket, "Sei in partita. Usa ABBANDONA se vuoi arrenderti e uscire.\n");
+                continue;
+            }
+
             invia_messaggio(client->socket, "Arrivederci!\n");
             break;
             
