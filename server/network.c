@@ -84,15 +84,17 @@ static void* gestisci_timeout_richiesta(void* arg) {
     return NULL;
 }
 
-void invia_messaggio(int socket, const char* messaggio) {
+int invia_messaggio(int socket, const char* messaggio) {
     if (socket < 0 || messaggio == NULL) {
-        return;
+        return -1;
     }
 
     ssize_t inviati = send(socket, messaggio, strlen(messaggio), 0);
     if (inviati < 0) {
         perror("Errore invio messaggio");
+        return -1;
     }
+    return 0;
 }
 
 int ricevi_messaggio(int socket, char* buffer) {
@@ -102,6 +104,31 @@ int ricevi_messaggio(int socket, char* buffer) {
         buffer[strcspn(buffer, "\n")] = 0;
     }
     return bytes;
+}
+
+static void termina_partita_per_socket_non_raggiungibile(Partita* partita, int socket_non_raggiungibile) {
+    if (partita == NULL || partita->stato != PARTITA_IN_CORSO) {
+        return;
+    }
+
+    int e_giocatore1 = (partita->socket_giocatore1 == socket_non_raggiungibile);
+    int avversario = e_giocatore1 ? partita->socket_giocatore2 : partita->socket_giocatore1;
+
+    partita->stato = PARTITA_TERMINATA;
+    partita->vincitore = e_giocatore1 ? 2 : 1;
+
+    if (avversario > 0) {
+        invia_messaggio(avversario, "L'altro giocatore si e' disconnesso. Hai vinto a tavolino.\n");
+        invia_messaggio(avversario, "Puoi creare o unirti a una nuova partita.\n");
+    }
+
+    if (e_giocatore1) {
+        partita->socket_giocatore1 = -1;
+        partita->nome_giocatore1[0] = '\0';
+    } else {
+        partita->socket_giocatore2 = -1;
+        partita->nome_giocatore2[0] = '\0';
+    }
 }
 
 void* gestisci_client(void* arg) {
@@ -260,24 +287,47 @@ void* gestisci_client(void* arg) {
             if (partita && partita->socket_giocatore1 == client->socket) {
                 if (accetta_richiesta(id_partita) == 0) {
                     char msg1[200], msg2[200];
+                    int socket_ko = -1;
                     sprintf(msg1, "Hai accettato %s. Partita iniziata!\n", partita->nome_giocatore2);
                     sprintf(msg2, "La tua richiesta è stata accettata! Partita iniziata!\n");
                     
-                    invia_messaggio(partita->socket_giocatore1, msg1);
-                    invia_messaggio(partita->socket_giocatore2, msg2);
+                    if (invia_messaggio(partita->socket_giocatore1, msg1) < 0) {
+                        socket_ko = partita->socket_giocatore1;
+                    }
+                    if (invia_messaggio(partita->socket_giocatore2, msg2) < 0 && socket_ko < 0) {
+                        socket_ko = partita->socket_giocatore2;
+                    }
                     
                     sprintf(msg1, "Giochi contro %s. Sei il giocatore ROSSO (R).\n", partita->nome_giocatore2);
                     sprintf(msg2, "Giochi contro %s. Sei il giocatore GIALLO (G).\n", partita->nome_giocatore1);
                     
-                    invia_messaggio(partita->socket_giocatore1, msg1);
-                    invia_messaggio(partita->socket_giocatore2, msg2);
+                    if (invia_messaggio(partita->socket_giocatore1, msg1) < 0 && socket_ko < 0) {
+                        socket_ko = partita->socket_giocatore1;
+                    }
+                    if (invia_messaggio(partita->socket_giocatore2, msg2) < 0 && socket_ko < 0) {
+                        socket_ko = partita->socket_giocatore2;
+                    }
                     
-                    invia_messaggio(partita->socket_giocatore1, griglia_a_stringa(partita->griglia));
-                    invia_messaggio(partita->socket_giocatore2, griglia_a_stringa(partita->griglia));
+                    if (invia_messaggio(partita->socket_giocatore1, griglia_a_stringa(partita->griglia)) < 0 && socket_ko < 0) {
+                        socket_ko = partita->socket_giocatore1;
+                    }
+                    if (invia_messaggio(partita->socket_giocatore2, griglia_a_stringa(partita->griglia)) < 0 && socket_ko < 0) {
+                        socket_ko = partita->socket_giocatore2;
+                    }
                     
-                    invia_messaggio(partita->socket_giocatore1, "È il tuo turno! Scegli una colonna (0-6): ");
+                    if (invia_messaggio(partita->socket_giocatore1, "È il tuo turno! Scegli una colonna (0-6): ") < 0 && socket_ko < 0) {
+                        socket_ko = partita->socket_giocatore1;
+                    }
                     
-                    invia_messaggio(partita->socket_giocatore2, "Aspetta il tuo turno...\n");
+                    if (invia_messaggio(partita->socket_giocatore2, "Aspetta il tuo turno...\n") < 0 && socket_ko < 0) {
+                        socket_ko = partita->socket_giocatore2;
+                    }
+                    
+                    if (socket_ko > 0) {
+                        termina_partita_per_socket_non_raggiungibile(partita, socket_ko);
+                        client->id_partita_corrente = 0;
+                        continue;
+                    }
                     client->id_partita_corrente = id_partita;
                 } else {
                     invia_messaggio(client->socket, "Errore nell'accettazione.\n");
@@ -402,18 +452,41 @@ void* gestisci_client(void* arg) {
                 }
                 
                 partita->turno_corrente = (partita->turno_corrente == 1) ? 2 : 1;
+                int socket_ko = -1;
                 
                 if (partita->turno_corrente == 1) {
-                    invia_messaggio(partita->socket_giocatore1, "È il tuo turno! Scegli una colonna (0-6): ");
-                    invia_messaggio(partita->socket_giocatore2, "Aspetta il tuo turno...\n");
+                    if (invia_messaggio(partita->socket_giocatore1, "È il tuo turno! Scegli una colonna (0-6): ") < 0) {
+                        socket_ko = partita->socket_giocatore1;
+                    }
+                    if (invia_messaggio(partita->socket_giocatore2, "Aspetta il tuo turno...\n") < 0 && socket_ko < 0) {
+                        socket_ko = partita->socket_giocatore2;
+                    }
                 } else {
-                    invia_messaggio(partita->socket_giocatore2, "È il tuo turno! Scegli una colonna (0-6): ");
-                    invia_messaggio(partita->socket_giocatore1, "Aspetta il tuo turno...\n");
+                    if (invia_messaggio(partita->socket_giocatore2, "È il tuo turno! Scegli una colonna (0-6): ") < 0) {
+                        socket_ko = partita->socket_giocatore2;
+                    }
+                    if (invia_messaggio(partita->socket_giocatore1, "Aspetta il tuo turno...\n") < 0 && socket_ko < 0) {
+                        socket_ko = partita->socket_giocatore1;
+                    }
                 }
-                invia_messaggio(partita->socket_giocatore1, "\n");
-                invia_messaggio(partita->socket_giocatore1, griglia_a_stringa(partita->griglia));
-                invia_messaggio(partita->socket_giocatore2, "\n");
-                invia_messaggio(partita->socket_giocatore2, griglia_a_stringa(partita->griglia));
+                if (invia_messaggio(partita->socket_giocatore1, "\n") < 0 && socket_ko < 0) {
+                    socket_ko = partita->socket_giocatore1;
+                }
+                if (invia_messaggio(partita->socket_giocatore1, griglia_a_stringa(partita->griglia)) < 0 && socket_ko < 0) {
+                    socket_ko = partita->socket_giocatore1;
+                }
+                if (invia_messaggio(partita->socket_giocatore2, "\n") < 0 && socket_ko < 0) {
+                    socket_ko = partita->socket_giocatore2;
+                }
+                if (invia_messaggio(partita->socket_giocatore2, griglia_a_stringa(partita->griglia)) < 0 && socket_ko < 0) {
+                    socket_ko = partita->socket_giocatore2;
+                }
+                
+                if (socket_ko > 0) {
+                    termina_partita_per_socket_non_raggiungibile(partita, socket_ko);
+                    client->id_partita_corrente = 0;
+                    continue;
+                }
             }
             
         } else {

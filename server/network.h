@@ -14,7 +14,7 @@ typedef struct {
 
 
 void* gestisci_client(void* arg);
-void invia_messaggio(int socket, const char* messaggio);
+int invia_messaggio(int socket, const char* messaggio);
 int ricevi_messaggio(int socket, char* buffer);
 
 #endif
