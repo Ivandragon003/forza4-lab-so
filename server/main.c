@@ -5,6 +5,9 @@
 #include <pthread.h>
 #include <arpa/inet.h>
 #include <signal.h>
+#ifdef __linux__
+#include <netinet/tcp.h>
+#endif
 #include "network.h"
 #include "game.h"
 
@@ -19,8 +22,7 @@ int main() {
         perror("Errore creazione socket");
         exit(EXIT_FAILURE);
     }
-    
-    // Opzioni socket
+ 
     int opt = 1;
     if (setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt))) {
         perror("Errore setsockopt");
@@ -31,7 +33,7 @@ int main() {
     indirizzo.sin_addr.s_addr = INADDR_ANY;
     indirizzo.sin_port = htons(PORTA);
     
-    // Bind
+
     if (bind(server_fd, (struct sockaddr *)&indirizzo, sizeof(indirizzo)) < 0) {
         perror("Errore bind");
         exit(EXIT_FAILURE);
@@ -58,10 +60,41 @@ int main() {
             free(dati_client);
             continue;
         }
+
+        int keepalive = 1;
+        if (setsockopt(dati_client->socket, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive)) < 0) {
+            perror("Errore setsockopt SO_KEEPALIVE");
+        }
+
+        // per rilevare disconnessioni "brusche" in tempi brevi
+#ifdef TCP_KEEPIDLE
+        {
+            int keepidle = 10;
+            if (setsockopt(dati_client->socket, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, sizeof(keepidle)) < 0) {
+                perror("Errore setsockopt TCP_KEEPIDLE");
+            }
+        }
+#endif
+#ifdef TCP_KEEPINTVL
+        {
+            int keepintvl = 5;
+            if (setsockopt(dati_client->socket, IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl, sizeof(keepintvl)) < 0) {
+                perror("Errore setsockopt TCP_KEEPINTVL");
+            }
+        }
+#endif
+#ifdef TCP_KEEPCNT
+        {
+            int keepcnt = 2;
+            if (setsockopt(dati_client->socket, IPPROTO_TCP, TCP_KEEPCNT, &keepcnt, sizeof(keepcnt)) < 0) {
+                perror("Errore setsockopt TCP_KEEPCNT");
+            }
+        }
+#endif
         
         dati_client->id_partita_corrente = 0;
         
-        // Crea thread per gestire il client
+        
         pthread_t thread_id;
         if (pthread_create(&thread_id, NULL, gestisci_client, (void*)dati_client) != 0) {
             perror("Errore creazione thread");

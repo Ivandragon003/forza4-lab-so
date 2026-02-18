@@ -11,6 +11,7 @@ public class Client {
     private static final String YELLOW = "\033[33m";
     private static final String GREEN = "\033[32m";
     private static final String BLUE = "\033[36m";
+    private static final String CYAN = "\033[96m";
     private static final String BOLD = "\033[1m";
     
     private Socket socket;
@@ -18,6 +19,7 @@ public class Client {
     private PrintWriter out;
     private Scanner scanner;
     private Thread listenerThread;
+    private volatile boolean chiusuraStampata = false;
     
     public Client() {
         scanner = new Scanner(System.in);
@@ -32,11 +34,26 @@ public class Client {
             System.out.println(BLUE + "Connesso al server!" + RESET);
             
             avviaListener();
+            registraShutdownHook();
             
         } catch (IOException e) {
             System.err.println("Errore di connessione: " + e.getMessage());
             System.exit(1);
         }
+    }
+
+    private void registraShutdownHook() {
+        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+            try {
+                if (out != null) {
+                    out.println("ABBANDONA");
+                    out.println("ESCI");
+                    out.flush();
+                }
+            } catch (Exception ignored) {
+            }
+            chiudiConnessione();
+        }));
     }
     
     private void avviaListener() {
@@ -72,6 +89,10 @@ public class Client {
         
         if (messaggio.contains("HAI VINTO")) {
             System.out.println(GREEN + BOLD + messaggio + RESET);
+        } else if (messaggio.contains("tuo turno") && messaggio.contains("Scegli una colonna")) {
+            System.out.println(GREEN + BOLD + messaggio + RESET);
+        } else if (messaggio.contains("Aspetta il tuo turno")) {
+            System.out.println(CYAN + messaggio + RESET);
         } else if (messaggio.contains("perso")) {
             System.out.println(RED + messaggio + RESET);
         } else if (messaggio.contains("PAREGGIO")) {
@@ -128,13 +149,13 @@ public class Client {
                     
                     if (comando.equalsIgnoreCase("ABBANDONA")) {
                         out.println("ABBANDONA");
-                        Thread.sleep(200);
-                        break;
+                        continue;
                     }
                     
                     if (comando.equalsIgnoreCase("ESCI")) {
                         out.println("ESCI");
-                        continue;
+                        Thread.sleep(200);
+                        break;
                     }
                     
                     out.println(comando);
@@ -159,7 +180,10 @@ public class Client {
             if (scanner != null) {
                 scanner.close();
             }
-            System.out.println("\nConnessione chiusa.");
+            if (!chiusuraStampata) {
+                chiusuraStampata = true;
+                System.out.println("\nConnessione chiusa.");
+            }
         } catch (IOException e) {
             System.err.println("Errore chiusura: " + e.getMessage());
         }
@@ -171,3 +195,5 @@ public class Client {
         client.gioca();
     }
 }
+
+

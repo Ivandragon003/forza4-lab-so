@@ -1,13 +1,14 @@
 #ifndef GAME_H
 #define GAME_H
 
+#include <stdatomic.h>
+
 #define RIGHE 6
 #define COLONNE 7
 #define MAX_PARTITE 100
 
 
 typedef enum {
-    PARTITA_CREATA,
     PARTITA_IN_ATTESA,
     PARTITA_RICHIESTA_PENDENTE, 
     PARTITA_IN_CORSO,
@@ -26,7 +27,8 @@ typedef struct {
     StatoPartita stato;
     int vincitore;
     int socket_richiedente;       
-    char nome_richiedente[50];   
+    char nome_richiedente[50];
+    atomic_int timeout_annullato;
 } Partita;
 
 

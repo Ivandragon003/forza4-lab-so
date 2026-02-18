@@ -5,6 +5,14 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/socket.h>
+#include <pthread.h>
+
+#define TIMEOUT_RICHIESTA_SEC 30
+
+typedef struct {
+    int id_partita;
+    int socket_richiedente;
+} TimeoutRichiestaArgs;
 
 static int trova_partita_in_corso_client(int socket_client) {
     for (int i = 0; i < contatore_partite; i++) {
@@ -39,6 +47,41 @@ static int trova_richiesta_pendente_client(int socket_client) {
         }
     }
     return 0;
+}
+
+static void* gestisci_timeout_richiesta(void* arg) {
+    TimeoutRichiestaArgs* timeout_args = (TimeoutRichiestaArgs*)arg;
+    sleep(TIMEOUT_RICHIESTA_SEC);
+
+    Partita* partita = trova_partita(timeout_args->id_partita);
+    if (partita != NULL &&
+        partita->stato == PARTITA_RICHIESTA_PENDENTE &&
+        partita->socket_richiedente == timeout_args->socket_richiedente) {
+        int atteso = 0;
+        if (!atomic_compare_exchange_strong(&partita->timeout_annullato, &atteso, 1)) {
+            free(timeout_args);
+            return NULL;
+        }
+
+        int socket_creatore = partita->socket_giocatore1;
+        int socket_richiedente = partita->socket_richiedente;
+
+        partita->socket_richiedente = -1;
+        partita->nome_richiedente[0] = '\0';
+        partita->stato = PARTITA_IN_ATTESA;
+
+        if (socket_richiedente > 0) {
+            invia_messaggio(socket_richiedente,
+                            "Tempo scaduto: nessuna risposta dal creatore. Richiesta annullata.\n");
+        }
+        if (socket_creatore > 0) {
+            invia_messaggio(socket_creatore,
+                            "La richiesta pendente e' scaduta automaticamente.\n");
+        }
+    }
+
+    free(timeout_args);
+    return NULL;
 }
 
 void invia_messaggio(int socket, const char* messaggio) {
@@ -84,12 +127,21 @@ void* gestisci_client(void* arg) {
     strcat(benvenuto, "ENTRA <id> - Richiedi di unirti a una partita\n");
     strcat(benvenuto, "ACCETTA <id> - Accetta richiesta (solo creatore)\n");
     strcat(benvenuto, "RIFIUTA <id> - Rifiuta richiesta (solo creatore)\n");
-    strcat(benvenuto, "ABBANDONA - Abbandona la partita corrente e esci\n");
-    strcat(benvenuto, "ESCI - Esci dal gioco (solo fuori partita)\n");
+    strcat(benvenuto, "ABBANDONA - Ti arrendi nella partita corrente ma resti connesso\n");
+    strcat(benvenuto, "ESCI - Esci dal gioco (solo quando non sei in partita)\n");
     invia_messaggio(client->socket, benvenuto);
     
     while (1) {
-        invia_messaggio(client->socket, "\n> ");
+        int mostra_prompt_menu = 1;
+        if (client->id_partita_corrente > 0) {
+            Partita* partita_prompt = trova_partita(client->id_partita_corrente);
+            if (partita_prompt && partita_prompt->stato == PARTITA_IN_CORSO) {
+                mostra_prompt_menu = 0;
+            }
+        }
+        if (mostra_prompt_menu) {
+            invia_messaggio(client->socket, "\n> ");
+        }
         
         if (ricevi_messaggio(client->socket, buffer) <= 0) {
             break;
@@ -151,7 +203,11 @@ void* gestisci_client(void* arg) {
                 
                 client->id_partita_corrente = id_partita;
                 
-                invia_messaggio(client->socket, "Richiesta inviata. In attesa di accettazione...\n");
+                char msg_attesa[180];
+                snprintf(msg_attesa, sizeof(msg_attesa),
+                         "Richiesta inviata. Attendi risposta (timeout %d secondi)...\n",
+                         TIMEOUT_RICHIESTA_SEC);
+                invia_messaggio(client->socket, msg_attesa);
                 
                 char notifica[300];
                 sprintf(notifica, "\n[NOTIFICA] %s vuole unirsi alla tua partita (ID: %d)\n", client->nome, id_partita);
@@ -163,6 +219,18 @@ void* gestisci_client(void* arg) {
                 strcat(notifica, id_str);
                 strcat(notifica, "'\n");
                 invia_messaggio(partita->socket_giocatore1, notifica);
+
+                TimeoutRichiestaArgs* timeout_args = malloc(sizeof(TimeoutRichiestaArgs));
+                if (timeout_args != NULL) {
+                    timeout_args->id_partita = id_partita;
+                    timeout_args->socket_richiedente = client->socket;
+                    pthread_t timeout_thread;
+                    if (pthread_create(&timeout_thread, NULL, gestisci_timeout_richiesta, timeout_args) == 0) {
+                        pthread_detach(timeout_thread);
+                    } else {
+                        free(timeout_args);
+                    }
+                }
                 
             } else if (risultato == -1) {
                 invia_messaggio(client->socket, "Partita non trovata.\n");
@@ -209,6 +277,7 @@ void* gestisci_client(void* arg) {
                     
                     invia_messaggio(partita->socket_giocatore1, "È il tuo turno! Scegli una colonna (0-6): ");
                     
+                    invia_messaggio(partita->socket_giocatore2, "Aspetta il tuo turno...\n");
                     client->id_partita_corrente = id_partita;
                 } else {
                     invia_messaggio(client->socket, "Errore nell'accettazione.\n");
@@ -251,16 +320,17 @@ void* gestisci_client(void* arg) {
                     invia_messaggio(avversario, "Puoi creare o unirti a una nuova partita.\n");
                 }
                 client->id_partita_corrente = 0;
+                invia_messaggio(client->socket,
+                                "Sei uscito dalla partita. Puoi creare o unirti a una nuova partita.\n");
             } else {
-                invia_messaggio(client->socket, "Non sei in una partita in corso.\n");
+                invia_messaggio(client->socket,
+                                "ABBANDONA e' valido solo durante una partita in corso.\n");
             }
-
-            invia_messaggio(client->socket, "Arrivederci!\n");
-            break;
         } else if (strcmp(buffer, "ESCI") == 0) {
             int id_in_corso = trova_partita_in_corso_client(client->socket);
             if (id_in_corso > 0) {
-                invia_messaggio(client->socket, "Sei in partita. Usa ABBANDONA se vuoi arrenderti e uscire.\n");
+                invia_messaggio(client->socket,
+                                "Sei in partita. Usa ABBANDONA per arrenderti e tornare al menu.\n");
                 continue;
             }
 
@@ -295,12 +365,12 @@ void* gestisci_client(void* arg) {
                     continue;
                 }
                 
-                invia_messaggio(partita->socket_giocatore1, "\n");
-                invia_messaggio(partita->socket_giocatore1, griglia_a_stringa(partita->griglia));
-                invia_messaggio(partita->socket_giocatore2, "\n");
-                invia_messaggio(partita->socket_giocatore2, griglia_a_stringa(partita->griglia));
-                
                 if (controlla_vittoria(partita->griglia, simbolo_giocatore)) {
+                    invia_messaggio(partita->socket_giocatore1, "\n");
+                    invia_messaggio(partita->socket_giocatore1, griglia_a_stringa(partita->griglia));
+                    invia_messaggio(partita->socket_giocatore2, "\n");
+                    invia_messaggio(partita->socket_giocatore2, griglia_a_stringa(partita->griglia));
+
                     partita->stato = PARTITA_TERMINATA;
                     partita->vincitore = e_giocatore1 ? 1 : 2;
                     
@@ -315,6 +385,11 @@ void* gestisci_client(void* arg) {
                 }
                 
                 if (controlla_pareggio(partita->griglia)) {
+                    invia_messaggio(partita->socket_giocatore1, "\n");
+                    invia_messaggio(partita->socket_giocatore1, griglia_a_stringa(partita->griglia));
+                    invia_messaggio(partita->socket_giocatore2, "\n");
+                    invia_messaggio(partita->socket_giocatore2, griglia_a_stringa(partita->griglia));
+
                     partita->stato = PARTITA_TERMINATA;
                     invia_messaggio(partita->socket_giocatore1, "PAREGGIO!\n");
                     invia_messaggio(partita->socket_giocatore2, "PAREGGIO!\n");
@@ -335,6 +410,10 @@ void* gestisci_client(void* arg) {
                     invia_messaggio(partita->socket_giocatore2, "È il tuo turno! Scegli una colonna (0-6): ");
                     invia_messaggio(partita->socket_giocatore1, "Aspetta il tuo turno...\n");
                 }
+                invia_messaggio(partita->socket_giocatore1, "\n");
+                invia_messaggio(partita->socket_giocatore1, griglia_a_stringa(partita->griglia));
+                invia_messaggio(partita->socket_giocatore2, "\n");
+                invia_messaggio(partita->socket_giocatore2, griglia_a_stringa(partita->griglia));
             }
             
         } else {
@@ -342,22 +421,61 @@ void* gestisci_client(void* arg) {
         }
     }
     
-    if (client->id_partita_corrente > 0) {
-        Partita* partita = trova_partita(client->id_partita_corrente);
-        if (partita) {
-            if (partita->socket_giocatore1 == client->socket || partita->socket_giocatore2 == client->socket) {
+    for (int i = 0; i < contatore_partite; i++) {
+        Partita* partita = &partite[i];
+        if (partita->stato == PARTITA_TERMINATA) {
+            continue;
+        }
+
+        if (partita->socket_giocatore1 == client->socket) {
+            if (partita->stato == PARTITA_IN_CORSO) {
                 partita->stato = PARTITA_TERMINATA;
-                int avversario = (partita->socket_giocatore1 == client->socket)
-                    ? partita->socket_giocatore2
-                    : partita->socket_giocatore1;
-                if (avversario > 0) {
-                    invia_messaggio(avversario, "L'altro giocatore si è disconnesso. Partita terminata.\n");
+                partita->vincitore = 2;
+                if (partita->socket_giocatore2 > 0) {
+                    invia_messaggio(partita->socket_giocatore2,
+                                    "L'altro giocatore si e' disconnesso. Hai vinto a tavolino.\n");
                 }
-            } else if (partita->socket_richiedente == client->socket) {
-                partita->socket_richiedente = -1;
-                partita->nome_richiedente[0] = '\0';
-                partita->stato = PARTITA_IN_ATTESA;
+            } else if (partita->stato == PARTITA_IN_ATTESA ||
+                       partita->stato == PARTITA_RICHIESTA_PENDENTE) {
+                if (partita->stato == PARTITA_RICHIESTA_PENDENTE && partita->socket_richiedente > 0) {
+                    invia_messaggio(partita->socket_richiedente,
+                                    "Il creatore della partita si e' disconnesso. Partita eliminata.\n");
+                }
+                partita->stato = PARTITA_TERMINATA;
             }
+            partita->socket_giocatore1 = -1;
+            partita->socket_giocatore2 = -1;
+            partita->socket_richiedente = -1;
+            partita->nome_giocatore1[0] = '\0';
+            partita->nome_giocatore2[0] = '\0';
+            partita->nome_richiedente[0] = '\0';
+            atomic_store(&partita->timeout_annullato, 1);
+            continue;
+        }
+
+        if (partita->socket_giocatore2 == client->socket &&
+            partita->stato == PARTITA_IN_CORSO) {
+            partita->stato = PARTITA_TERMINATA;
+            partita->vincitore = 1;
+            if (partita->socket_giocatore1 > 0) {
+                invia_messaggio(partita->socket_giocatore1,
+                                "L'altro giocatore si e' disconnesso. Hai vinto a tavolino.\n");
+            }
+            partita->socket_giocatore2 = -1;
+            partita->nome_giocatore2[0] = '\0';
+            continue;
+        }
+
+        if (partita->socket_richiedente == client->socket &&
+            partita->stato == PARTITA_RICHIESTA_PENDENTE) {
+            partita->socket_richiedente = -1;
+            partita->nome_richiedente[0] = '\0';
+            partita->stato = PARTITA_IN_ATTESA;
+            if (partita->socket_giocatore1 > 0) {
+                invia_messaggio(partita->socket_giocatore1,
+                                "Il richiedente si e' disconnesso. Richiesta annullata.\n");
+            }
+            atomic_store(&partita->timeout_annullato, 1);
         }
     }
 

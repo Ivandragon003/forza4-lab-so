@@ -131,6 +131,7 @@ int crea_partita(int socket_giocatore, char* nome_giocatore) {
     partita->turno_corrente = 1;
     partita->stato = PARTITA_IN_ATTESA;
     partita->vincitore = 0;
+    atomic_init(&partita->timeout_annullato, 0);
     
     contatore_partite++;
     return partita->id_partita;
@@ -168,6 +169,7 @@ int richiedi_partita(int id_partita, int socket_giocatore, char* nome_giocatore)
     }
     
     // Salva la richiesta
+    atomic_store(&partita->timeout_annullato, 0);
     partita->socket_richiedente = socket_giocatore;
     snprintf(partita->nome_richiedente, sizeof(partita->nome_richiedente), "%s", nome_giocatore);
     partita->stato = PARTITA_RICHIESTA_PENDENTE;
@@ -181,10 +183,17 @@ int accetta_richiesta(int id_partita) {
     if (partita == NULL || partita->stato != PARTITA_RICHIESTA_PENDENTE) {
         return -1;
     }
+
+    int atteso = 0;
+    if (!atomic_compare_exchange_strong(&partita->timeout_annullato, &atteso, 1)) {
+        return -1;
+    }
     
     // sposta il richiedente in giocatore2
     partita->socket_giocatore2 = partita->socket_richiedente;
     snprintf(partita->nome_giocatore2, sizeof(partita->nome_giocatore2), "%s", partita->nome_richiedente);
+    partita->socket_richiedente = -1;
+    partita->nome_richiedente[0] = '\0';
     partita->stato = PARTITA_IN_CORSO;
     
     return 0;
@@ -196,8 +205,12 @@ int rifiuta_richiesta(int id_partita) {
     if (partita == NULL || partita->stato != PARTITA_RICHIESTA_PENDENTE) {
         return -1;
     }
-    
-  
+
+    int atteso = 0;
+    if (!atomic_compare_exchange_strong(&partita->timeout_annullato, &atteso, 1)) {
+        return -1;
+    }
+
     partita->socket_richiedente = -1;
     partita->nome_richiedente[0] = '\0';
     partita->stato = PARTITA_IN_ATTESA;
