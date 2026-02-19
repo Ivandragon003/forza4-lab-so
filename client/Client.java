@@ -140,26 +140,33 @@ public class Client {
             Thread.sleep(500);
             
             while (true) {
-                if (scanner.hasNextLine()) {
-                    String comando = scanner.nextLine().trim();
-                    
-                    if (comando.isEmpty()) {
-                        continue;
-                    }
-                    
-                    if (comando.equalsIgnoreCase("ABBANDONA")) {
+                if (!scanner.hasNextLine()) {
+                    if (out != null) {
                         out.println("ABBANDONA");
-                        continue;
-                    }
-                    
-                    if (comando.equalsIgnoreCase("ESCI")) {
                         out.println("ESCI");
-                        Thread.sleep(200);
-                        break;
+                        out.flush();
                     }
-                    
-                    out.println(comando);
+                    break;
                 }
+
+                String comando = scanner.nextLine().trim();
+                
+                if (comando.isEmpty()) {
+                    continue;
+                }
+
+                if (comando.equalsIgnoreCase("ABBANDONA")) {
+                    out.println("ABBANDONA");
+                    continue;
+                }
+                
+                if (comando.equalsIgnoreCase("ESCI")) {
+                    out.println("ESCI");
+                    Thread.sleep(200);
+                    break;
+                }
+                
+                out.println(comando);
             }
             
         } catch (InterruptedException e) {
