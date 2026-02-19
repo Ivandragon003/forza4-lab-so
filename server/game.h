@@ -2,6 +2,7 @@
 #define GAME_H
 
 #include <stdatomic.h>
+#include <stddef.h>
 
 #define RIGHE 6
 #define COLONNE 7
@@ -39,7 +40,7 @@ void inizializza_griglia(char griglia[RIGHE][COLONNE]);
 int inserisci_gettone(char griglia[RIGHE][COLONNE], int colonna, char giocatore);
 int controlla_vittoria(char griglia[RIGHE][COLONNE], char giocatore);
 int controlla_pareggio(char griglia[RIGHE][COLONNE]);
-char* griglia_a_stringa(char griglia[RIGHE][COLONNE]);
+void griglia_a_stringa(char griglia[RIGHE][COLONNE], char* buffer, size_t size);
 
 
 int crea_partita(int socket_giocatore, char* nome_giocatore);

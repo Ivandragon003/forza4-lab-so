@@ -96,21 +96,53 @@ int controlla_pareggio(char griglia[RIGHE][COLONNE]) {
 }
 
 
-char* griglia_a_stringa(char griglia[RIGHE][COLONNE]) {
-    static char buffer[500];
+void griglia_a_stringa(char griglia[RIGHE][COLONNE], char* buffer, size_t size) {
+    if (buffer == NULL || size == 0) {
+        return;
+    }
+
+    size_t pos = 0;
     buffer[0] = '\0';
-    
+
     for (int i = 0; i < RIGHE; i++) {
         for (int j = 0; j < COLONNE; j++) {
-            char cella[3];
-            sprintf(cella, "%c ", griglia[i][j]);
-            strcat(buffer, cella);
+            if (pos >= size) {
+                buffer[size - 1] = '\0';
+                return;
+            }
+            int scritti = snprintf(buffer + pos, size - pos, "%c ", griglia[i][j]);
+            if (scritti < 0) {
+                buffer[0] = '\0';
+                return;
+            }
+            if ((size_t)scritti >= size - pos) {
+                buffer[size - 1] = '\0';
+                return;
+            }
+            pos += (size_t)scritti;
         }
-        strcat(buffer, "\n");
+
+        if (pos >= size) {
+            buffer[size - 1] = '\0';
+            return;
+        }
+        int scritti = snprintf(buffer + pos, size - pos, "\n");
+        if (scritti < 0) {
+            buffer[0] = '\0';
+            return;
+        }
+        if ((size_t)scritti >= size - pos) {
+            buffer[size - 1] = '\0';
+            return;
+        }
+        pos += (size_t)scritti;
     }
-    strcat(buffer, "0 1 2 3 4 5 6\n");
-    
-    return buffer;
+
+    if (pos >= size) {
+        buffer[size - 1] = '\0';
+        return;
+    }
+    snprintf(buffer + pos, size - pos, "0 1 2 3 4 5 6\n");
 }
 
 

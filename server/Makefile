@@ -1,11 +1,12 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -pthread -std=c11
 TARGET = server
+SRCS = main.c game.c network.c session.c commands.c game_queries.c
 
 all: $(TARGET)
 
-$(TARGET): main.c game.c network.c
-	$(CC) $(CFLAGS) -o $(TARGET) main.c game.c network.c
+$(TARGET): $(SRCS)
+	$(CC) $(CFLAGS) -o $(TARGET) $(SRCS)
 
 clean:
 	rm -f $(TARGET) *.o
