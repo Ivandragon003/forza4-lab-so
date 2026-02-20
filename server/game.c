@@ -5,6 +5,16 @@
 
 Partita partite[MAX_PARTITE];
 int contatore_partite = 0;
+pthread_mutex_t mutex_partite = PTHREAD_MUTEX_INITIALIZER;
+static int prossimo_id_partita = 1;
+
+void blocca_partite(void) {
+    pthread_mutex_lock(&mutex_partite);
+}
+
+void sblocca_partite(void) {
+    pthread_mutex_unlock(&mutex_partite);
+}
 
 
 void inizializza_griglia(char griglia[RIGHE][COLONNE]) {
@@ -147,12 +157,24 @@ void griglia_a_stringa(char griglia[RIGHE][COLONNE], char* buffer, size_t size) 
 
 
 int crea_partita(int socket_giocatore, char* nome_giocatore) {
-    if (contatore_partite >= MAX_PARTITE) {
-        return -1;  
+    int indice_libero = -1;
+    for (int i = 0; i < contatore_partite; i++) {
+        if (partite[i].stato == PARTITA_TERMINATA) {
+            indice_libero = i;
+            break;
+        }
     }
-    
-    Partita* partita = &partite[contatore_partite];
-    partita->id_partita = contatore_partite + 1;
+
+    if (indice_libero < 0) {
+        if (contatore_partite >= MAX_PARTITE) {
+            return -1;
+        }
+        indice_libero = contatore_partite;
+        contatore_partite++;
+    }
+
+    Partita* partita = &partite[indice_libero];
+    partita->id_partita = prossimo_id_partita++;
     inizializza_griglia(partita->griglia);
     partita->socket_giocatore1 = socket_giocatore;
     partita->socket_giocatore2 = -1;
@@ -164,8 +186,7 @@ int crea_partita(int socket_giocatore, char* nome_giocatore) {
     partita->stato = PARTITA_IN_ATTESA;
     partita->vincitore = 0;
     atomic_init(&partita->timeout_annullato, 0);
-    
-    contatore_partite++;
+
     return partita->id_partita;
 }
 
@@ -250,26 +271,29 @@ int rifiuta_richiesta(int id_partita) {
     return 0;
 } 
 
-char* lista_partite() {
-    static char buffer[2048];
+void lista_partite(char* buffer, size_t capienza) {
     size_t usati = 0;
-    size_t capienza = sizeof(buffer);
     int partite_disponibili = 0;
+
+    if (buffer == NULL || capienza == 0) {
+        return;
+    }
+
     buffer[0] = '\0';
     
     if (contatore_partite == 0) {
         snprintf(buffer, capienza, "Nessuna partita disponibile.\n");
-        return buffer;
+        return;
     }
     
     int scritti = snprintf(buffer + usati, capienza - usati, "Partite disponibili:\n");
     if (scritti < 0) {
         buffer[0] = '\0';
-        return buffer;
+        return;
     }
     if ((size_t)scritti >= capienza - usati) {
         buffer[capienza - 1] = '\0';
-        return buffer;
+        return;
     }
     usati += (size_t)scritti;
 
@@ -293,7 +317,7 @@ char* lista_partite() {
 
         if (scritti < 0) {
             buffer[0] = '\0';
-            return buffer;
+            return;
         }
         if ((size_t)scritti >= capienza - usati) {
             usati = capienza - 1;
@@ -306,6 +330,4 @@ char* lista_partite() {
     if (partite_disponibili == 0) {
         snprintf(buffer, capienza, "Nessuna partita disponibile.\n");
     }
-    
-    return buffer;
 }

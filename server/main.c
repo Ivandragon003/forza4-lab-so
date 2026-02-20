@@ -4,6 +4,7 @@
 #include <pthread.h>
 #include <arpa/inet.h>
 #include <signal.h>
+#include <sys/time.h>
 #ifdef __linux__
 #include <netinet/tcp.h>
 #endif
@@ -84,6 +85,23 @@ int main() {
             }
         }
 #endif
+#ifdef TCP_USER_TIMEOUT
+        {
+            int timeout_ms = 15000;
+            if (setsockopt(dati_client->socket, IPPROTO_TCP, TCP_USER_TIMEOUT,
+                           &timeout_ms, sizeof(timeout_ms)) < 0) {
+                perror("Errore setsockopt TCP_USER_TIMEOUT");
+            }
+        }
+#endif
+        {
+            struct timeval tv;
+            tv.tv_sec = 15;
+            tv.tv_usec = 0;
+            if (setsockopt(dati_client->socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+                perror("Errore setsockopt SO_RCVTIMEO");
+            }
+        }
 
         dati_client->id_partita_corrente = 0;
 

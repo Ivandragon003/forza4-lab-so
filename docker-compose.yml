@@ -13,13 +13,13 @@ services:
     build:
       context: ./client
       dockerfile: Dockerfile
-    container_name: forza4_client
     depends_on:
       - server
     networks:
       - forza4_network
     stdin_open: true
     tty: true
+    init: true
 
 networks:
   forza4_network:

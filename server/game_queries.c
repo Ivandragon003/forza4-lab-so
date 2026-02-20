@@ -2,6 +2,7 @@
 
 #include <stddef.h>
 
+
 int trova_partita_in_corso_client(int socket_client) {
     Partita* partita = trova_partita_in_corso_per_socket(socket_client);
     return partita ? partita->id_partita : 0;

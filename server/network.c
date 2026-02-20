@@ -18,10 +18,38 @@ int invia_messaggio(int socket, const char* messaggio) {
 }
 
 int ricevi_messaggio(int socket, char* buffer) {
-    memset(buffer, 0, DIM_BUFFER);
-    int bytes = recv(socket, buffer, DIM_BUFFER - 1, 0);
-    if (bytes > 0) {
-        buffer[strcspn(buffer, "\n")] = 0;
+    if (socket < 0 || buffer == NULL) {
+        return -1;
     }
-    return bytes;
+
+    size_t pos = 0;
+    int overflow = 0;
+    memset(buffer, 0, DIM_BUFFER);
+
+    while (1) {
+        char c;
+        int bytes = recv(socket, &c, 1, 0);
+        if (bytes < 0) {
+            return -1;
+        }
+        if (bytes == 0) {
+            return 0; 
+        }
+
+        if (c == '\r') {
+            continue;
+        }
+        if (c == '\n') {
+            break;
+        }
+
+        if (!overflow && pos < (size_t)(DIM_BUFFER - 1)) {
+            buffer[pos++] = c;
+        } else {
+            overflow = 1;
+        }
+    }
+
+    buffer[pos] = '\0';
+    return (int)pos;
 }

@@ -1,5 +1,6 @@
 import java.io.*;
 import java.net.*;
+import java.util.NoSuchElementException;
 import java.util.Scanner;
 
 public class Client {
@@ -19,6 +20,7 @@ public class Client {
     private PrintWriter out;
     private Scanner scanner;
     private Thread listenerThread;
+    private Thread pingThread;
     private volatile boolean chiusuraStampata = false;
     
     public Client() {
@@ -34,6 +36,7 @@ public class Client {
             System.out.println(BLUE + "Connesso al server!" + RESET);
             
             avviaListener();
+            avviaPing();
             registraShutdownHook();
             
         } catch (IOException e) {
@@ -42,16 +45,20 @@ public class Client {
         }
     }
 
+    private void inviaDisconnessioneVolontaria() {
+        try {
+            if (out != null) {
+                out.println("ABBANDONA");
+                out.println("ESCI");
+                out.flush();
+            }
+        } catch (Exception ignored) {
+        }
+    }
+
     private void registraShutdownHook() {
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            try {
-                if (out != null) {
-                    out.println("ABBANDONA");
-                    out.println("ESCI");
-                    out.flush();
-                }
-            } catch (Exception ignored) {
-            }
+            inviaDisconnessioneVolontaria();
             chiudiConnessione();
         }));
     }
@@ -70,6 +77,30 @@ public class Client {
             }
         });
         listenerThread.start();
+    }
+
+    private void avviaPing() {
+        pingThread = new Thread(() -> {
+            try {
+                Thread.sleep(10000);
+            } catch (InterruptedException e) {
+                return;
+            }
+            while (socket != null && !socket.isClosed()) {
+                try {
+                    Thread.sleep(5000);
+                    if (socket != null && !socket.isClosed() && out != null) {
+                        out.println("PING");
+                    }
+                } catch (InterruptedException e) {
+                    break;
+                } catch (Exception ignored) {
+                    break;
+                }
+            }
+        });
+        pingThread.setDaemon(true);
+        pingThread.start();
     }
     
     private void gestisciMessaggioServer(String messaggio) {
@@ -140,16 +171,13 @@ public class Client {
             Thread.sleep(500);
             
             while (true) {
-                if (!scanner.hasNextLine()) {
-                    if (out != null) {
-                        out.println("ABBANDONA");
-                        out.println("ESCI");
-                        out.flush();
-                    }
+                String comando;
+                try {
+                    comando = scanner.nextLine().trim();
+                } catch (NoSuchElementException | IllegalStateException e) {
+                    inviaDisconnessioneVolontaria();
                     break;
                 }
-
-                String comando = scanner.nextLine().trim();
                 
                 if (comando.isEmpty()) {
                     continue;
@@ -180,6 +208,9 @@ public class Client {
         try {
             if (listenerThread != null) {
                 listenerThread.interrupt();
+            }
+            if (pingThread != null) {
+                pingThread.interrupt();
             }
             if (socket != null && !socket.isClosed()) {
                 socket.close();

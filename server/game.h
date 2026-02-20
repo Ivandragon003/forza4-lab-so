@@ -3,6 +3,7 @@
 
 #include <stdatomic.h>
 #include <stddef.h>
+#include <pthread.h>
 
 #define RIGHE 6
 #define COLONNE 7
@@ -35,6 +36,10 @@ typedef struct {
 
 extern Partita partite[MAX_PARTITE];
 extern int contatore_partite;
+extern pthread_mutex_t mutex_partite;
+
+void blocca_partite(void);
+void sblocca_partite(void);
 
 void inizializza_griglia(char griglia[RIGHE][COLONNE]);
 int inserisci_gettone(char griglia[RIGHE][COLONNE], int colonna, char giocatore);
@@ -48,6 +53,6 @@ Partita* trova_partita(int id_partita);
 int richiedi_partita(int id_partita, int socket_giocatore, char* nome_giocatore);
 int accetta_richiesta(int id_partita);
 int rifiuta_richiesta(int id_partita);
-char* lista_partite();
+void lista_partite(char* buffer, size_t capienza);
 
 #endif
