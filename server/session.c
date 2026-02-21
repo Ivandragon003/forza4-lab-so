@@ -1,4 +1,4 @@
-#include "session.h"
+﻿#include "session.h"
 #include "network.h"
 #include "game.h"
 #include "commands.h"
@@ -79,7 +79,6 @@ void* gestisci_client(void* arg) {
             break;
         }
 
-        printf("Ricevuto da %s: %s\n", client->nome, buffer);
 
         if (gestisci_input_client(client, buffer) < 0) {
             break;

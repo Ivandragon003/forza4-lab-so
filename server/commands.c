@@ -3,6 +3,7 @@
 #include "game.h"
 #include "game_queries.h"
 
+#include <ctype.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,7 +17,7 @@ static const char* MSG_VITTORIA_TAVOLINO =
 static const char* MSG_MENU_NUOVA_PARTITA =
     "Puoi creare o unirti a una nuova partita.\n";
 static const char* MSG_TURNO =
-    "E il tuo turno! Scegli una colonna (0-6): ";
+    "E il tuo turno! Scegli una colonna (0-6).\n";
 static const char* MSG_ATTESA_TURNO =
     "Aspetta il tuo turno...\n";
 
@@ -274,9 +275,9 @@ static int gestisci_comando_accetta(DatiClient* client, const char* buffer) {
 
             invia_con_fallback(partita->socket_giocatore1, msg1, &socket_ko);
             invia_con_fallback(partita->socket_giocatore2, msg2, &socket_ko);
-            invia_griglia_a_entrambi_con_fallback(partita, &socket_ko);
             invia_con_fallback(partita->socket_giocatore1, MSG_TURNO, &socket_ko);
             invia_con_fallback(partita->socket_giocatore2, MSG_ATTESA_TURNO, &socket_ko);
+            invia_griglia_a_entrambi_con_fallback(partita, &socket_ko);
 
             if (socket_ko > 0) {
                 int socket_avversario = termina_partita_per_socket_non_raggiungibile(partita, socket_ko);
@@ -386,7 +387,7 @@ static int gestisci_mossa_gioco(DatiClient* client, const char* buffer) {
     }
     if (strlen(buffer) != 1 || buffer[0] < '0' || buffer[0] > '6') {
         sblocca_partite();
-        invia_messaggio(socket_me, "Input non valido! Inserisci un numero da 0 a 6: ");
+        invia_messaggio(socket_me, "Errore: input errato. Inserisci un numero da 0 a 6.\n");
         return 0;
     }
 
@@ -396,7 +397,7 @@ static int gestisci_mossa_gioco(DatiClient* client, const char* buffer) {
     int riga = inserisci_gettone(partita->griglia, colonna, simbolo_giocatore);
     if (riga == -1) {
         sblocca_partite();
-        invia_messaggio(socket_me, "Mossa non valida! Riprova: ");
+        invia_messaggio(socket_me, "Mossa non valida! Colonna piena, riprova.\n");
         return 0;
     }
 
@@ -496,15 +497,25 @@ static int gestisci_mossa_gioco(DatiClient* client, const char* buffer) {
 }
 
 int gestisci_input_client(DatiClient* client, const char* buffer) {
-    if (strcmp(buffer, "PING") == 0) {
+    char buffer_normalizzato[DIM_BUFFER];
+    size_t len = strlen(buffer);
+    if (len >= sizeof(buffer_normalizzato)) {
+        len = sizeof(buffer_normalizzato) - 1;
+    }
+    for (size_t i = 0; i < len; i++) {
+        buffer_normalizzato[i] = (char)toupper((unsigned char)buffer[i]);
+    }
+    buffer_normalizzato[len] = '\0';
+
+    if (strcmp(buffer_normalizzato, "PING") == 0) {
         return 0;
     }
 
-    if (strcmp(buffer, "CREA") == 0) {
+    if (strcmp(buffer_normalizzato, "CREA") == 0) {
         return gestisci_comando_crea(client);
     }
 
-    if (strcmp(buffer, "LISTA") == 0) {
+    if (strcmp(buffer_normalizzato, "LISTA") == 0) {
         char lista_buffer[2048];
         blocca_partite();
         lista_partite(lista_buffer, sizeof(lista_buffer));
@@ -513,23 +524,23 @@ int gestisci_input_client(DatiClient* client, const char* buffer) {
         return 0;
     }
 
-    if (strncmp(buffer, "ENTRA ", 6) == 0) {
-        return gestisci_comando_entra(client, buffer);
+    if (strncmp(buffer_normalizzato, "ENTRA ", 6) == 0) {
+        return gestisci_comando_entra(client, buffer_normalizzato);
     }
 
-    if (strncmp(buffer, "ACCETTA ", 8) == 0) {
-        return gestisci_comando_accetta(client, buffer);
+    if (strncmp(buffer_normalizzato, "ACCETTA ", 8) == 0) {
+        return gestisci_comando_accetta(client, buffer_normalizzato);
     }
 
-    if (strncmp(buffer, "RIFIUTA ", 8) == 0) {
-        return gestisci_comando_rifiuta(client, buffer);
+    if (strncmp(buffer_normalizzato, "RIFIUTA ", 8) == 0) {
+        return gestisci_comando_rifiuta(client, buffer_normalizzato);
     }
 
-    if (strcmp(buffer, "ABBANDONA") == 0) {
+    if (strcmp(buffer_normalizzato, "ABBANDONA") == 0) {
         return gestisci_comando_abbandona(client);
     }
 
-    if (strcmp(buffer, "ESCI") == 0) {
+    if (strcmp(buffer_normalizzato, "ESCI") == 0) {
         blocca_partite();
         int id_in_corso = trova_partita_in_corso_client(client->socket);
         sblocca_partite();
@@ -544,10 +555,10 @@ int gestisci_input_client(DatiClient* client, const char* buffer) {
     }
 
     if (client->id_partita_corrente > 0) {
-        return gestisci_mossa_gioco(client, buffer);
+        return gestisci_mossa_gioco(client, buffer_normalizzato);
     }
 
-    invia_messaggio(client->socket, "Comando non riconosciuto.\n");
+    invia_messaggio(client->socket, "Errore: input errato. Usa un comando del menu.\n");
     return 0;
 }
 

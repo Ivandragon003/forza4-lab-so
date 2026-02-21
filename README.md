@@ -1,4 +1,4 @@
-# Forza 4 - Lab SO
+ï»¿# Forza 4 - Lab SO
 
 Server multiplayer TCP in C + client console Java per giocare a Forza 4.
 
@@ -45,12 +45,12 @@ Dalla root del progetto:
 docker-compose up --build server
 ```
 
-2. In un altro terminale, avvia un client interattivo:
+2. In un altro terminale, avvia un client:
 ```bash
-docker exec -it forza4_client java Client
+docker-compose run --rm client
 ```
 
-Per avviare più client, esegui lo stesso comando in terminali diversi.
+Per avviare piÃ¹ client, esegui lo stesso comando in terminali diversi.
 
 ## Comandi disponibili (client)
 - `CREA` -> crea una nuova partita
@@ -62,11 +62,14 @@ Per avviare più client, esegui lo stesso comando in terminali diversi.
 - `ESCI` -> uscita dal gioco (quando non in partita)
 
 ## Note su disconnessione
-Se il terminale client viene chiuso senza digitare `ESCI`, il client gestisce EOF e chiude la connessione verso il server, evitando attese infinite dell'altro giocatore.
+Se il terminale viene chiuso, il container si arresta (grazie a `init: true`),
+il processo Java riceve SIGTERM, esegue lo shutdown hook e notifica il server.
+Come fallback, il server rileva l'assenza di PING entro 15 secondi e
+gestisce la disconnessione automaticamente.
 
 ## Rete e container
 - Server: container `forza4_server` (`0.0.0.0:8080->8080`)
-- Client: container `forza4_client`
+- Client: container effimero avviato con `docker-compose run --rm client`
 - Network: bridge `forza4_network`
 
 ## Comandi utili
@@ -83,7 +86,6 @@ docker-compose ps
 Log:
 ```bash
 docker-compose logs -f server
-docker-compose logs -f client
 ```
 
 Stop:
@@ -93,5 +95,5 @@ docker-compose down
 
 ## Troubleshooting rapido
 - Errore pipe Docker su Windows (`dockerDesktopLinuxEngine`): avvia Docker Desktop.
-- Client non interattivo: usa sempre `docker exec -it forza4_client java Client`.
+- Client non interattivo o avvio errato: usa `docker-compose run --rm client`.
 - Porta `8080` occupata: libera la porta o cambia mapping in `docker-compose.yml`.

@@ -1,5 +1,6 @@
 import java.io.*;
 import java.net.*;
+import java.util.Locale;
 import java.util.NoSuchElementException;
 import java.util.Scanner;
 
@@ -22,6 +23,7 @@ public class Client {
     private Thread listenerThread;
     private Thread pingThread;
     private volatile boolean chiusuraStampata = false;
+    private volatile boolean pingAvviato = false;
     
     public Client() {
         scanner = new Scanner(System.in);
@@ -34,14 +36,44 @@ public class Client {
             out = new PrintWriter(socket.getOutputStream(), true);
             
             System.out.println(BLUE + "Connesso al server!" + RESET);
-            
+            completaHandshakeNome();
             avviaListener();
-            avviaPing();
+            if (!pingAvviato) {
+                pingAvviato = true;
+                avviaPing();
+            }
             registraShutdownHook();
             
         } catch (IOException e) {
             System.err.println("Errore di connessione: " + e.getMessage());
             System.exit(1);
+        }
+    }
+
+    private void completaHandshakeNome() throws IOException {
+        String riga;
+        while ((riga = in.readLine()) != null) {
+            System.out.println(riga);
+            if (riga.toLowerCase(Locale.ROOT).contains("inserisci il tuo nome")) {
+                break;
+            }
+        }
+        if (riga == null) {
+            throw new IOException("Connessione chiusa durante handshake iniziale");
+        }
+
+        while (true) {
+            String nome;
+            try {
+                nome = scanner.nextLine().trim();
+            } catch (NoSuchElementException | IllegalStateException e) {
+                throw new IOException("Input utente non disponibile durante handshake iniziale", e);
+            }
+            if (nome.isEmpty()) {
+                continue;
+            }
+            out.println(nome);
+            break;
         }
     }
 
@@ -118,14 +150,20 @@ public class Client {
         }
         
         
-        if (messaggio.contains("HAI VINTO")) {
+        String normalizzato = messaggio.toLowerCase(Locale.ROOT);
+
+        if (normalizzato.contains("hai vinto") ||
+            normalizzato.contains("vinto per resa") ||
+            normalizzato.contains("vinto a tavolino")) {
             System.out.println(GREEN + BOLD + messaggio + RESET);
-        } else if (messaggio.contains("tuo turno") && messaggio.contains("Scegli una colonna")) {
-            System.out.println(GREEN + BOLD + messaggio + RESET);
-        } else if (messaggio.contains("Aspetta il tuo turno")) {
-            System.out.println(CYAN + messaggio + RESET);
-        } else if (messaggio.contains("perso")) {
-            System.out.println(RED + messaggio + RESET);
+        } else if (normalizzato.contains("hai perso") ||
+                   normalizzato.contains(" perso")) {
+            System.out.println(RED + BOLD + messaggio + RESET);
+        } else if (normalizzato.contains("tuo turno") &&
+                   normalizzato.contains("scegli una colonna")) {
+            System.out.println(CYAN + BOLD + messaggio + RESET);
+        } else if (normalizzato.contains("aspetta il tuo turno")) {
+            System.out.println(BLUE + messaggio + RESET);
         } else if (messaggio.contains("PAREGGIO")) {
             System.out.println(YELLOW + BOLD + messaggio + RESET);
         } else if (messaggio.contains("NOTIFICA")) {
@@ -168,8 +206,6 @@ public class Client {
     
     public void gioca() {
         try {
-            Thread.sleep(500);
-            
             while (true) {
                 String comando;
                 try {
