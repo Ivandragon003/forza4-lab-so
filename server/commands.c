@@ -28,24 +28,24 @@ static int parse_id_comando(const char* buffer, const char* prefisso, int* out_i
         return -1;
     }
 
-    size_t prefisso_len = strlen(prefisso);
-    if (strncmp(buffer, prefisso, prefisso_len) != 0) {
+    size_t prefisso_len = strlen(prefisso); // conta caratteri di una stringa 
+    if (strncmp(buffer, prefisso, prefisso_len) != 0) {  //confranta stringhe nei primi N caratteri
         return -1;
     }
 
-    const char* numero = buffer + prefisso_len;
+    const char* numero = buffer + prefisso_len; // sposta puntatore
     if (*numero == '\0') {
         return -1;
     }
 
     errno = 0;
     char* endptr = NULL;
-    long id = strtol(numero, &endptr, 10);
+    long id = strtol(numero, &endptr, 10); // salva il numero
     if (numero == endptr || errno != 0 || id <= 0 || id > INT_MAX) {
-        return -1;
+        return -1;  // errore: nessun numero valido, overflow, o numero fuori range
     }
 
-    while (*endptr != '\0' && isspace((unsigned char)*endptr)) {
+    while (*endptr != '\0' && isspace((unsigned char)*endptr)) {  // errore: ci sono caratteri non validi dopo il numero
         endptr++;
     }
 

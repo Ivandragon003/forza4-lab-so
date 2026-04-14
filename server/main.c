@@ -105,7 +105,7 @@ htons = Host TO Network Short (16 bit). Converte un numero a 16 bit dall'ordine 
             perror("Errore setsockopt SO_KEEPALIVE");
         }
 
-#ifdef TCP_KEEPIDLE
+#ifdef TCP_KEEPIDLE // dopo quanti secondi di inattività iniziare i controlli
         {
             int keepidle = 10;
             if (setsockopt(dati_client->socket, IPPROTO_TCP, TCP_KEEPIDLE, &keepidle, sizeof(keepidle)) < 0) {
@@ -113,7 +113,7 @@ htons = Host TO Network Short (16 bit). Converte un numero a 16 bit dall'ordine 
             }
         }
 #endif
-#ifdef TCP_KEEPINTVL
+#ifdef TCP_KEEPINTVL // ogni quanto riprovare a controllare dopo il primo tentativo
         {
             int keepintvl = 5;
             if (setsockopt(dati_client->socket, IPPROTO_TCP, TCP_KEEPINTVL, &keepintvl, sizeof(keepintvl)) < 0) {
@@ -121,7 +121,7 @@ htons = Host TO Network Short (16 bit). Converte un numero a 16 bit dall'ordine 
             }
         }
 #endif
-#ifdef TCP_KEEPCNT
+#ifdef TCP_KEEPCNT // quante volte riprovo prima di dire “client morto”
         {
             int keepcnt = 2;
             if (setsockopt(dati_client->socket, IPPROTO_TCP, TCP_KEEPCNT, &keepcnt, sizeof(keepcnt)) < 0) {
@@ -129,7 +129,7 @@ htons = Host TO Network Short (16 bit). Converte un numero a 16 bit dall'ordine 
             }
         }
 #endif
-#ifdef TCP_USER_TIMEOUT
+#ifdef TCP_USER_TIMEOUT // massimo tempo per ricevere ACK o risposta TCP prima di considerare la connessione morta
         {
             int timeout_ms = 15000;
             if (setsockopt(dati_client->socket, IPPROTO_TCP, TCP_USER_TIMEOUT,
@@ -142,7 +142,8 @@ htons = Host TO Network Short (16 bit). Converte un numero a 16 bit dall'ordine 
             struct timeval tv;
             tv.tv_sec = 15;
             tv.tv_usec = 0;
-            if (setsockopt(dati_client->socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) {
+            // evita blocchi infiniti su recv() se il client smette di rispondere
+            if (setsockopt(dati_client->socket, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv)) < 0) { 
                 perror("Errore setsockopt SO_RCVTIMEO");
             }
         }

@@ -54,7 +54,7 @@ void* gestisci_client(void* arg) {
         free(client);
         return NULL;
     }
-    snprintf(client->nome, sizeof(client->nome), "%.49s", buffer);
+    snprintf(client->nome, sizeof(client->nome), "%.49s", buffer); // copia il nome del client limitando la lunghezza per evitare overflow del buffer
 
     char benvenuto[500];
     snprintf(benvenuto, sizeof(benvenuto), "Ciao %s! Comandi disponibili:\n%s", client->nome, MENU_COMANDI);
