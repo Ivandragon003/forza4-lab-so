@@ -29,7 +29,7 @@ DatiClient* trova_client_attivo_per_socket(int socket) {
 void aggiorna_id_partita_client_per_socket(int socket, int id_partita) {
     DatiClient* client = trova_client_attivo_per_socket(socket);
     if (client != NULL) {
-        client->id_partita_corrente = id_partita;
+        atomic_store(&client->id_partita_corrente, id_partita);
     }
 }
 
@@ -62,9 +62,10 @@ void* gestisci_client(void* arg) {
 
     while (1) {
         int mostra_prompt_menu = 1;
-        if (client->id_partita_corrente > 0) {
+        int id_corrente = atomic_load(&client->id_partita_corrente);
+        if (id_corrente > 0) {
             blocca_partite();
-            Partita* partita_prompt = trova_partita(client->id_partita_corrente);
+            Partita* partita_prompt = trova_partita(id_corrente);
             if (partita_prompt && partita_prompt->stato == PARTITA_IN_CORSO) {
                 mostra_prompt_menu = 0;
             }

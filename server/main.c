@@ -28,7 +28,7 @@ struct sockaddr_in {
     unsigned char   sin_zero[8]; // spazio di padding, non si usa direttamente
 };
 */
-    int addrlen = sizeof(indirizzo);
+    socklen_t addrlen = sizeof(indirizzo);
     signal(SIGPIPE, SIG_IGN);
 
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) { 
@@ -86,7 +86,12 @@ htons = Host TO Network Short (16 bit). Converte un numero a 16 bit dall'ordine 
 
     while (1) {
         DatiClient* dati_client = malloc(sizeof(DatiClient));
-        dati_client->socket = accept(server_fd, (struct sockaddr*)&indirizzo, (socklen_t*)&addrlen);
+        if (dati_client == NULL) {
+            perror("Errore malloc DatiClient");
+            continue;
+        }
+        addrlen = sizeof(indirizzo);
+        dati_client->socket = accept(server_fd, (struct sockaddr*)&indirizzo, &addrlen);
 //accept blocca il processo finchè non arriva un client, poi restituice una nuova socket dedicata a quel client;
 
         if (dati_client->socket < 0) {
@@ -142,7 +147,7 @@ htons = Host TO Network Short (16 bit). Converte un numero a 16 bit dall'ordine 
             }
         }
 
-        dati_client->id_partita_corrente = 0;
+        atomic_init(&dati_client->id_partita_corrente, 0);
 
         pthread_t thread_id;
         if (pthread_create(&thread_id, NULL, gestisci_client, (void*)dati_client) != 0) {

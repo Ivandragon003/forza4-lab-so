@@ -6,7 +6,7 @@
 typedef struct {
     int socket;
     char nome[50];
-    int id_partita_corrente;
+    _Atomic int id_partita_corrente;
 } DatiClient;
 
 #define MAX_SOCKET_TRACCIATI 4096

@@ -4,6 +4,8 @@
 #include "game_queries.h"
 
 #include <ctype.h>
+#include <errno.h>
+#include <limits.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -19,6 +21,40 @@ static void notifica_altri_client(int escludi1, int escludi2, const char* messag
             invia_messaggio(c->socket, messaggio);
         }
     }
+}
+
+static int parse_id_comando(const char* buffer, const char* prefisso, int* out_id) {
+    if (buffer == NULL || prefisso == NULL || out_id == NULL) {
+        return -1;
+    }
+
+    size_t prefisso_len = strlen(prefisso);
+    if (strncmp(buffer, prefisso, prefisso_len) != 0) {
+        return -1;
+    }
+
+    const char* numero = buffer + prefisso_len;
+    if (*numero == '\0') {
+        return -1;
+    }
+
+    errno = 0;
+    char* endptr = NULL;
+    long id = strtol(numero, &endptr, 10);
+    if (numero == endptr || errno != 0 || id <= 0 || id > INT_MAX) {
+        return -1;
+    }
+
+    while (*endptr != '\0' && isspace((unsigned char)*endptr)) {
+        endptr++;
+    }
+
+    if (*endptr != '\0') {
+        return -1;
+    }
+
+    *out_id = (int)id;
+    return 0;
 }
 
 static const char* MSG_VITTORIA_TAVOLINO =
@@ -161,7 +197,7 @@ static int gestisci_comando_crea(DatiClient* client) {
     sblocca_partite();
     if (id_partita > 0) {
         char msg[100];
-        sprintf(msg, "Partita creata! ID: %d\nIn attesa di un avversario...\n", id_partita);
+        snprintf(msg, sizeof(msg), "Partita creata! ID: %d\nIn attesa di un avversario...\n", id_partita);
         invia_messaggio(client->socket, msg);
 
         char notifica_broadcast[150];
@@ -200,7 +236,12 @@ static int gestisci_comando_entra(DatiClient* client, const char* buffer) {
         return 0;
     }
 
-    int id_partita = atoi(buffer + 6);
+    int id_partita = 0;
+    if (parse_id_comando(buffer, "ENTRA ", &id_partita) != 0) {
+        sblocca_partite();
+        invia_messaggio(client->socket, "Formato comando non valido. Usa: ENTRA <id_partita>\n");
+        return 0;
+    }
     int risultato = richiedi_partita(id_partita, client->socket, client->nome);
     int socket_creatore = -1;
 
@@ -210,7 +251,7 @@ static int gestisci_comando_entra(DatiClient* client, const char* buffer) {
             socket_creatore = partita->socket_giocatore1;
         }
 
-        client->id_partita_corrente = id_partita;
+        atomic_store(&client->id_partita_corrente, id_partita);
     }
     sblocca_partite();
 
@@ -222,14 +263,10 @@ static int gestisci_comando_entra(DatiClient* client, const char* buffer) {
         invia_messaggio(client->socket, msg_attesa);
 
         char notifica[300];
-        sprintf(notifica, "\n[NOTIFICA] %s vuole unirsi alla tua partita (ID: %d)\n", client->nome, id_partita);
-        strcat(notifica, "Digita 'ACCETTA ");
-        char id_str[10];
-        sprintf(id_str, "%d", id_partita);
-        strcat(notifica, id_str);
-        strcat(notifica, "' o 'RIFIUTA ");
-        strcat(notifica, id_str);
-        strcat(notifica, "'\n");
+        snprintf(notifica, sizeof(notifica),
+                 "\n[NOTIFICA] %s vuole unirsi alla tua partita (ID: %d)\n"
+                 "Digita 'ACCETTA %d' o 'RIFIUTA %d'\n",
+                 client->nome, id_partita, id_partita, id_partita);
         if (socket_creatore > 0) {
             invia_messaggio(socket_creatore, notifica);
         }
@@ -259,7 +296,11 @@ static int gestisci_comando_entra(DatiClient* client, const char* buffer) {
 }
 
 static int gestisci_comando_accetta(DatiClient* client, const char* buffer) {
-    int id_partita = atoi(buffer + 8);
+    int id_partita = 0;
+    if (parse_id_comando(buffer, "ACCETTA ", &id_partita) != 0) {
+        invia_messaggio(client->socket, "Formato comando non valido. Usa: ACCETTA <id_partita>\n");
+        return 0;
+    }
     blocca_partite();
     int id_in_corso = trova_partita_in_corso_client(client->socket);
     if (id_in_corso > 0 && id_in_corso != id_partita) {
@@ -279,14 +320,14 @@ static int gestisci_comando_accetta(DatiClient* client, const char* buffer) {
         if (accetta_richiesta(id_partita) == 0) {
             char msg1[200], msg2[200];
             int socket_ko = -1;
-            sprintf(msg1, "Hai accettato %s. Partita iniziata!\n", partita->nome_giocatore2);
-            sprintf(msg2, "La tua richiesta e' stata accettata! Partita iniziata!\n");
+            snprintf(msg1, sizeof(msg1), "Hai accettato %s. Partita iniziata!\n", partita->nome_giocatore2);
+            snprintf(msg2, sizeof(msg2), "La tua richiesta e' stata accettata! Partita iniziata!\n");
 
             invia_con_fallback(partita->socket_giocatore1, msg1, &socket_ko);
             invia_con_fallback(partita->socket_giocatore2, msg2, &socket_ko);
 
-            sprintf(msg1, "Giochi contro %s. Sei il giocatore ROSSO (R).\n", partita->nome_giocatore2);
-            sprintf(msg2, "Giochi contro %s. Sei il giocatore GIALLO (G).\n", partita->nome_giocatore1);
+            snprintf(msg1, sizeof(msg1), "Giochi contro %s. Sei il giocatore ROSSO (R).\n", partita->nome_giocatore2);
+            snprintf(msg2, sizeof(msg2), "Giochi contro %s. Sei il giocatore GIALLO (G).\n", partita->nome_giocatore1);
 
             invia_con_fallback(partita->socket_giocatore1, msg1, &socket_ko);
             invia_con_fallback(partita->socket_giocatore2, msg2, &socket_ko);
@@ -296,7 +337,7 @@ static int gestisci_comando_accetta(DatiClient* client, const char* buffer) {
 
             if (socket_ko > 0) {
                 int socket_avversario = termina_partita_per_socket_non_raggiungibile(partita, socket_ko);
-                client->id_partita_corrente = 0;
+                atomic_store(&client->id_partita_corrente, 0);
                 sblocca_partite();
                 if (socket_avversario > 0) {
                     invia_messaggio(socket_avversario,
@@ -306,7 +347,7 @@ static int gestisci_comando_accetta(DatiClient* client, const char* buffer) {
                 }
                 return 0;
             }
-            client->id_partita_corrente = id_partita;
+            atomic_store(&client->id_partita_corrente, id_partita);
             char nome_g1[50], nome_g2[50];
             snprintf(nome_g1, sizeof(nome_g1), "%s", partita->nome_giocatore1);
             snprintf(nome_g2, sizeof(nome_g2), "%s", partita->nome_giocatore2);
@@ -333,7 +374,11 @@ static int gestisci_comando_accetta(DatiClient* client, const char* buffer) {
 }
 
 static int gestisci_comando_rifiuta(DatiClient* client, const char* buffer) {
-    int id_partita = atoi(buffer + 8);
+    int id_partita = 0;
+    if (parse_id_comando(buffer, "RIFIUTA ", &id_partita) != 0) {
+        invia_messaggio(client->socket, "Formato comando non valido. Usa: RIFIUTA <id_partita>\n");
+        return 0;
+    }
     blocca_partite();
     Partita* partita = trova_partita(id_partita);
 
@@ -367,7 +412,7 @@ static int gestisci_comando_abbandona(DatiClient* client) {
 
         partita_in_corso->stato = PARTITA_TERMINATA;
         partita_in_corso->vincitore = e_giocatore1 ? 2 : 1;
-        client->id_partita_corrente = 0;
+        atomic_store(&client->id_partita_corrente, 0);
         sblocca_partite();
 
         invia_messaggio(client->socket, "Hai abbandonato la partita. Hai perso.\n");
@@ -391,7 +436,7 @@ static int gestisci_comando_abbandona(DatiClient* client) {
 }
 
 static int gestisci_mossa_gioco(DatiClient* client, const char* buffer) {
-    int id_partita = client->id_partita_corrente;
+    int id_partita = atomic_load(&client->id_partita_corrente);
     int socket_me = client->socket;
     int socket_opp = -1;
     int socket_turno = -1;
@@ -402,7 +447,7 @@ static int gestisci_mossa_gioco(DatiClient* client, const char* buffer) {
     blocca_partite();
     Partita* partita = trova_partita(id_partita);
     if (!partita || partita->stato != PARTITA_IN_CORSO) {
-        client->id_partita_corrente = 0;
+        atomic_store(&client->id_partita_corrente, 0);
         sblocca_partite();
         return 0;
     }
@@ -422,7 +467,7 @@ static int gestisci_mossa_gioco(DatiClient* client, const char* buffer) {
         return 0;
     }
 
-    int colonna = atoi(buffer);
+    int colonna = buffer[0] - '0';
     char simbolo_giocatore = e_giocatore1 ? 'R' : 'G';
 
     int riga = inserisci_gettone(partita->griglia, colonna, simbolo_giocatore);
@@ -437,11 +482,11 @@ static int gestisci_mossa_gioco(DatiClient* client, const char* buffer) {
     if (controlla_vittoria(partita->griglia, simbolo_giocatore)) {
         partita->stato = PARTITA_TERMINATA;
         partita->vincitore = e_giocatore1 ? 1 : 2;
-        client->id_partita_corrente = 0;
+        atomic_store(&client->id_partita_corrente, 0);
         stato_post = 1;
     } else if (controlla_pareggio(partita->griglia)) {
         partita->stato = PARTITA_TERMINATA;
-        client->id_partita_corrente = 0;
+        atomic_store(&client->id_partita_corrente, 0);
         stato_post = 2;
     } else {
         partita->turno_corrente = (partita->turno_corrente == 1) ? 2 : 1;
@@ -521,7 +566,7 @@ static int gestisci_mossa_gioco(DatiClient* client, const char* buffer) {
         if (partita_ko != NULL && partita_ko->stato == PARTITA_IN_CORSO) {
             socket_avversario = termina_partita_per_socket_non_raggiungibile(partita_ko, socket_ko);
         }
-        client->id_partita_corrente = 0;
+        atomic_store(&client->id_partita_corrente, 0);
         sblocca_partite();
 
         if (socket_avversario > 0) {
@@ -593,7 +638,7 @@ int gestisci_input_client(DatiClient* client, const char* buffer) {
         return -1;
     }
 
-    if (client->id_partita_corrente > 0) {
+    if (atomic_load(&client->id_partita_corrente) > 0) {
         return gestisci_mossa_gioco(client, buffer_normalizzato);
     }
 
