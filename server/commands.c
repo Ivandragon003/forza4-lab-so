@@ -12,6 +12,15 @@
 
 #define TIMEOUT_RICHIESTA_SEC 30
 
+static void notifica_altri_client(int escludi1, int escludi2, const char* messaggio) {
+    for (int i = 0; i < MAX_SOCKET_TRACCIATI; i++) {
+        DatiClient* c = atomic_load(&client_per_socket[i]);
+        if (c != NULL && c->socket != escludi1 && c->socket != escludi2) {
+            invia_messaggio(c->socket, messaggio);
+        }
+    }
+}
+
 static const char* MSG_VITTORIA_TAVOLINO =
     "L'altro giocatore si e' disconnesso. Hai vinto a tavolino.\n";
 static const char* MSG_MENU_NUOVA_PARTITA =
@@ -154,6 +163,12 @@ static int gestisci_comando_crea(DatiClient* client) {
         char msg[100];
         sprintf(msg, "Partita creata! ID: %d\nIn attesa di un avversario...\n", id_partita);
         invia_messaggio(client->socket, msg);
+
+        char notifica_broadcast[150];
+        snprintf(notifica_broadcast, sizeof(notifica_broadcast),
+                 "NOTIFICA: Nuova partita disponibile (ID: %d, creata da: %s)\n",
+                 id_partita, client->nome);
+        notifica_altri_client(client->socket, -1, notifica_broadcast);
     } else {
         invia_messaggio(client->socket, "Errore nella creazione della partita.\n");
     }
@@ -292,7 +307,18 @@ static int gestisci_comando_accetta(DatiClient* client, const char* buffer) {
                 return 0;
             }
             client->id_partita_corrente = id_partita;
+            char nome_g1[50], nome_g2[50];
+            snprintf(nome_g1, sizeof(nome_g1), "%s", partita->nome_giocatore1);
+            snprintf(nome_g2, sizeof(nome_g2), "%s", partita->nome_giocatore2);
+            int sock_g1 = partita->socket_giocatore1;
+            int sock_g2 = partita->socket_giocatore2;
             sblocca_partite();
+
+            char notifica_broadcast[200];
+            snprintf(notifica_broadcast, sizeof(notifica_broadcast),
+                     "NOTIFICA: La partita ID %d (%s vs %s) e' iniziata. Non e' piu' possibile partecipare.\n",
+                     id_partita, nome_g1, nome_g2);
+            notifica_altri_client(sock_g1, sock_g2, notifica_broadcast);
             return 0;
         } else {
             sblocca_partite();
@@ -337,6 +363,7 @@ static int gestisci_comando_abbandona(DatiClient* client) {
         int e_giocatore1 = (partita_in_corso->socket_giocatore1 == client->socket);
         int avversario = e_giocatore1 ? partita_in_corso->socket_giocatore2
                                       : partita_in_corso->socket_giocatore1;
+        int id_abbandonata = partita_in_corso->id_partita;
 
         partita_in_corso->stato = PARTITA_TERMINATA;
         partita_in_corso->vincitore = e_giocatore1 ? 2 : 1;
@@ -351,6 +378,10 @@ static int gestisci_comando_abbandona(DatiClient* client) {
         }
         invia_messaggio(client->socket,
                         "Sei uscito dalla partita. Puoi creare o unirti a una nuova partita.\n");
+        char notifica_fine[100];
+        snprintf(notifica_fine, sizeof(notifica_fine),
+                 "NOTIFICA: La partita ID %d si e' conclusa.\n", id_abbandonata);
+        notifica_altri_client(client->socket, avversario, notifica_fine);
     } else {
         sblocca_partite();
         invia_messaggio(client->socket,
@@ -439,6 +470,10 @@ static int gestisci_mossa_gioco(DatiClient* client, const char* buffer) {
             aggiorna_id_partita_client_per_socket(socket_opp, 0);
         }
         invia_messaggio(socket_me, MSG_MENU_NUOVA_PARTITA);
+        char notifica_fine[100];
+        snprintf(notifica_fine, sizeof(notifica_fine),
+                 "NOTIFICA: La partita ID %d si e' conclusa.\n", id_partita);
+        notifica_altri_client(socket_me, socket_opp, notifica_fine);
         return 0;
     }
 
@@ -456,6 +491,10 @@ static int gestisci_mossa_gioco(DatiClient* client, const char* buffer) {
             aggiorna_id_partita_client_per_socket(socket_opp, 0);
         }
         invia_messaggio(socket_me, MSG_MENU_NUOVA_PARTITA);
+        char notifica_fine[100];
+        snprintf(notifica_fine, sizeof(notifica_fine),
+                 "NOTIFICA: La partita ID %d si e' conclusa.\n", id_partita);
+        notifica_altri_client(socket_me, socket_opp, notifica_fine);
         return 0;
     }
 

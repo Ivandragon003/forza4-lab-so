@@ -33,6 +33,7 @@ struct sockaddr_in {
 
     if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) < 0) { 
 //          AF_INET → protocollo IPv4       SOCK_STREAM=TCP, mentre SOCK_DGRAM=udp;
+/*quando il codice fa socket(...), non ottiene “un oggetto astratto”, ma un numero come 3, 4, 5 che identifica quella socket dentro il processo.*/
         perror("Errore creazione socket");
 //perror(const char *s)
 //funzione che stampa la stringa s passata, uno spazio e la traduzione testualer del valore corrente di errno
