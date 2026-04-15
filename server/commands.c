@@ -78,6 +78,12 @@ typedef struct {
     int reset_id_partita;
 } NotificaDisconnessione;
 
+typedef struct {
+    int id_partita;
+    int escludi1;
+    int escludi2;
+} BroadcastPartitaTerminata;
+
 static void accoda_notifica_disconnessione(NotificaDisconnessione* notifiche,
                                            int* count,
                                            int socket,
@@ -92,6 +98,34 @@ static void accoda_notifica_disconnessione(NotificaDisconnessione* notifiche,
     notifiche[*count].messaggio2 = messaggio2;
     notifiche[*count].reset_id_partita = reset_id_partita;
     (*count)++;
+}
+
+static void accoda_broadcast_partita_terminata(BroadcastPartitaTerminata* broadcast,
+                                               int* count,
+                                               int id_partita,
+                                               int escludi1,
+                                               int escludi2) {
+    if (*count >= MAX_PARTITE) {
+        return;
+    }
+
+    for (int i = 0; i < *count; i++) {
+        if (broadcast[i].id_partita == id_partita) {
+            return;
+        }
+    }
+
+    broadcast[*count].id_partita = id_partita;
+    broadcast[*count].escludi1 = escludi1;
+    broadcast[*count].escludi2 = escludi2;
+    (*count)++;
+}
+
+static void broadcast_partita_conclusa(int id_partita, int escludi1, int escludi2) {
+    char notifica_fine[100];
+    snprintf(notifica_fine, sizeof(notifica_fine),
+             "NOTIFICA: La partita ID %d si e' conclusa.\n", id_partita);
+    notifica_altri_client(escludi1, escludi2, notifica_fine);
 }
 
 static int termina_partita_per_socket_non_raggiungibile(Partita* partita, int socket_non_raggiungibile) {
@@ -168,6 +202,7 @@ static void* gestisci_timeout_richiesta(void* arg) {
         if (socket_richiedente > 0) {
             invia_messaggio(socket_richiedente,
                             "Tempo scaduto: nessuna risposta dal creatore. Richiesta annullata.\n");
+            aggiorna_id_partita_client_per_socket(socket_richiedente, 0);
         }
         if (socket_creatore > 0) {
             invia_messaggio(socket_creatore,
@@ -388,6 +423,7 @@ static int gestisci_comando_rifiuta(DatiClient* client, const char* buffer) {
             sblocca_partite();
             if (socket_richiedente > 0) {
                 invia_messaggio(socket_richiedente, "La tua richiesta e' stata rifiutata.\n");
+                aggiorna_id_partita_client_per_socket(socket_richiedente, 0);
             }
             invia_messaggio(client->socket, "Hai rifiutato la richiesta.\n");
         } else {
@@ -515,10 +551,7 @@ static int gestisci_mossa_gioco(DatiClient* client, const char* buffer) {
             aggiorna_id_partita_client_per_socket(socket_opp, 0);
         }
         invia_messaggio(socket_me, MSG_MENU_NUOVA_PARTITA);
-        char notifica_fine[100];
-        snprintf(notifica_fine, sizeof(notifica_fine),
-                 "NOTIFICA: La partita ID %d si e' conclusa.\n", id_partita);
-        notifica_altri_client(socket_me, socket_opp, notifica_fine);
+        broadcast_partita_conclusa(id_partita, socket_me, socket_opp);
         return 0;
     }
 
@@ -536,10 +569,7 @@ static int gestisci_mossa_gioco(DatiClient* client, const char* buffer) {
             aggiorna_id_partita_client_per_socket(socket_opp, 0);
         }
         invia_messaggio(socket_me, MSG_MENU_NUOVA_PARTITA);
-        char notifica_fine[100];
-        snprintf(notifica_fine, sizeof(notifica_fine),
-                 "NOTIFICA: La partita ID %d si e' conclusa.\n", id_partita);
-        notifica_altri_client(socket_me, socket_opp, notifica_fine);
+        broadcast_partita_conclusa(id_partita, socket_me, socket_opp);
         return 0;
     }
 
@@ -575,6 +605,7 @@ static int gestisci_mossa_gioco(DatiClient* client, const char* buffer) {
             invia_messaggio(socket_avversario, MSG_MENU_NUOVA_PARTITA);
             aggiorna_id_partita_client_per_socket(socket_avversario, 0);
         }
+        broadcast_partita_conclusa(id_partita, socket_ko, socket_avversario);
     }
 
     return 0;
@@ -649,6 +680,8 @@ int gestisci_input_client(DatiClient* client, const char* buffer) {
 void gestisci_disconnessione_client(DatiClient* client) {
     NotificaDisconnessione notifiche[MAX_PARTITE * 2];
     int notifiche_count = 0;
+    BroadcastPartitaTerminata broadcast[MAX_PARTITE];
+    int broadcast_count = 0;
 
     blocca_partite();
     for (int i = 0; i < contatore_partite; i++) {
@@ -661,6 +694,12 @@ void gestisci_disconnessione_client(DatiClient* client) {
             if (partita->stato == PARTITA_IN_CORSO) {
                 partita->stato = PARTITA_TERMINATA;
                 partita->vincitore = 2;
+                accoda_broadcast_partita_terminata(
+                    broadcast,
+                    &broadcast_count,
+                    partita->id_partita,
+                    client->socket,
+                    partita->socket_giocatore2);
                 if (partita->socket_giocatore2 > 0) {
                     accoda_notifica_disconnessione(
                         notifiche,
@@ -682,6 +721,12 @@ void gestisci_disconnessione_client(DatiClient* client) {
                         1);
                 }
                 partita->stato = PARTITA_TERMINATA;
+                accoda_broadcast_partita_terminata(
+                    broadcast,
+                    &broadcast_count,
+                    partita->id_partita,
+                    client->socket,
+                    partita->socket_richiedente);
             }
             partita->socket_giocatore1 = -1;
             partita->socket_giocatore2 = -1;
@@ -697,6 +742,12 @@ void gestisci_disconnessione_client(DatiClient* client) {
             partita->stato == PARTITA_IN_CORSO) {
             partita->stato = PARTITA_TERMINATA;
             partita->vincitore = 1;
+            accoda_broadcast_partita_terminata(
+                broadcast,
+                &broadcast_count,
+                partita->id_partita,
+                client->socket,
+                partita->socket_giocatore1);
             if (partita->socket_giocatore1 > 0) {
                 accoda_notifica_disconnessione(
                     notifiche,
@@ -729,6 +780,13 @@ void gestisci_disconnessione_client(DatiClient* client) {
         }
     }
     sblocca_partite();
+
+    for (int i = 0; i < broadcast_count; i++) {
+        broadcast_partita_conclusa(
+            broadcast[i].id_partita,
+            broadcast[i].escludi1,
+            broadcast[i].escludi2);
+    }
 
     for (int i = 0; i < notifiche_count; i++) {
         if (notifiche[i].socket <= 0) {
