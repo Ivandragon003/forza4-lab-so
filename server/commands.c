@@ -222,22 +222,37 @@ static int termina_partita_per_socket_non_raggiungibile(Partita* partita, int so
     return avversario;
 }
 
-static void gestisci_socket_ko_partita(int id_partita, int socket_ko, DatiClient* client, int reset_client_sempre) {
+static void gestisci_socket_ko_partita(int id_partita,
+                                      int socket_ko,
+                                      DatiClient* client,
+                                      int reset_client_sempre)
+{
     int socket_avversario = -1;
+    bool partita_terminata = false;
 
     blocca_partite();
+
     Partita* partita_ko = trova_partita(id_partita);
+
     if (partita_ko != NULL && partita_ko->stato == PARTITA_IN_CORSO) {
         socket_avversario = termina_partita_per_socket_non_raggiungibile(partita_ko, socket_ko);
+        partita_terminata = true;
     }
+
+    // reset stato client (sempre se richiesto o se è il socket KO)
     if (reset_client_sempre || socket_ko == client->socket) {
         atomic_store(&client->id_partita_corrente, 0);
     }
+
     sblocca_partite();
 
-    notifica_vittoria_tavolino(socket_avversario);
-    broadcast_partita_conclusa(id_partita, socket_ko, socket_avversario);
+    // notifiche SOLO se la partita è stata realmente terminata qui
+    if (partita_terminata && socket_avversario >= 0) {
+        notifica_vittoria_tavolino(socket_avversario);
+        broadcast_partita_conclusa(id_partita, socket_ko, socket_avversario);
+    }
 }
+
 
 static void* gestisci_timeout_richiesta(void* arg) {
     TimeoutRichiestaArgs* timeout_args = (TimeoutRichiestaArgs*)arg;
@@ -382,8 +397,8 @@ static int gestisci_comando_entra(DatiClient* client, const char* buffer) {
             timeout_args->id_partita = id_partita;
             timeout_args->socket_richiedente = client->socket;
             pthread_t timeout_thread;
-            if (pthread_create(&timeout_thread, NULL, gestisci_timeout_richiesta, timeout_args) == 0) {
-                pthread_detach(timeout_thread);
+            if (pthread_create(&timeout_thread, NULL, gestisci_timeout_richiesta, timeout_args) == 0) { // creo thread in parallelo
+                pthread_detach(timeout_thread); // quando finisce libero thread
                 timeout_avviato = 1;
             } else {
                 free(timeout_args);
