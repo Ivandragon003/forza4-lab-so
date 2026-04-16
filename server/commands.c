@@ -687,7 +687,7 @@ int gestisci_input_client(DatiClient* client, const char* buffer) {
     char buffer_normalizzato[DIM_BUFFER];
     size_t len = strlen(buffer);
     if (len >= sizeof(buffer_normalizzato)) {
-        len = sizeof(buffer_normalizzato) - 1;
+        len = sizeof(buffer_normalizzato) - 1; //evita overflow
     }
     for (size_t i = 0; i < len; i++) {
         buffer_normalizzato[i] = (char)toupper((unsigned char)buffer[i]);

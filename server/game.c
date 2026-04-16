@@ -107,54 +107,65 @@ int controlla_pareggio(char griglia[RIGHE][COLONNE]) {
 
 
 void griglia_a_stringa(char griglia[RIGHE][COLONNE], char* buffer, size_t size) {
+
     if (buffer == NULL || size == 0) {
         return;
     }
 
-    size_t pos = 0;
-    buffer[0] = '\0';
+    size_t pos = 0;   // dove sto scrivendo dentro la stringa
+    buffer[0] = '\0'; // parto da stringa vuota
 
     for (int i = 0; i < RIGHE; i++) {
         for (int j = 0; j < COLONNE; j++) {
+
+            // se non c'è più spazio
             if (pos >= size) {
                 buffer[size - 1] = '\0';
                 return;
             }
+            
+            // scrivo il carattere + spazio dentro la stringa
             int scritti = snprintf(buffer + pos, size - pos, "%c ", griglia[i][j]);
+
+           
             if (scritti < 0) {
                 buffer[0] = '\0';
                 return;
             }
+
+            // se non ci sta tutto, stop per sicurezza
             if ((size_t)scritti >= size - pos) {
                 buffer[size - 1] = '\0';
                 return;
             }
-            pos += (size_t)scritti;
+            pos += scritti;
         }
 
+        // vado a capo dopo ogni riga
         if (pos >= size) {
             buffer[size - 1] = '\0';
             return;
         }
+
         int scritti = snprintf(buffer + pos, size - pos, "\n");
+
         if (scritti < 0) {
             buffer[0] = '\0';
             return;
         }
+
         if ((size_t)scritti >= size - pos) {
             buffer[size - 1] = '\0';
             return;
         }
-        pos += (size_t)scritti;
+
+        pos += scritti;
     }
 
-    if (pos >= size) {
-        buffer[size - 1] = '\0';
-        return;
+    if (pos < size) {
+        snprintf(buffer + pos, size - pos, "0 1 2 3 4 5 6\n");
     }
-    snprintf(buffer + pos, size - pos, "0 1 2 3 4 5 6\n");
 }
-
 
 int crea_partita(int socket_giocatore, char* nome_giocatore) {
     int indice_libero = -1;
