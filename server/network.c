@@ -11,7 +11,7 @@ int invia_messaggio(int socket, const char* messaggio) {
     }
 
     size_t len = strlen(messaggio);
-    size_t tot_inviati = 0;
+    size_t tot_inviati = 0; //byte inviati fino ad ora
 
     while (tot_inviati < len) {
         ssize_t inviati = send(socket, messaggio + tot_inviati, len - tot_inviati, 0);

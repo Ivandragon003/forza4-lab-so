@@ -554,8 +554,8 @@ static int gestisci_comando_abbandona(DatiClient* client) {
     blocca_partite();
     Partita* partita_in_corso = trova_partita_in_corso_per_socket(client->socket);
     if (partita_in_corso != NULL) {
-        int e_giocatore1 = (partita_in_corso->socket_giocatore1 == client->socket);
-        int avversario = e_giocatore1 ? partita_in_corso->socket_giocatore2
+        int e_giocatore1 = (partita_in_corso->socket_giocatore1 == client->socket); //chi abbandona è il giocatore 1
+        int avversario = e_giocatore1 ? partita_in_corso->socket_giocatore2 //se e_giocaotre1 == 1, allora l'avversario è il giocatore 2, 1 altrimenti.
                                       : partita_in_corso->socket_giocatore1;
         int id_abbandonata = partita_in_corso->id_partita;
 

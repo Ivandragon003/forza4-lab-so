@@ -19,7 +19,7 @@ static const char* MENU_COMANDI =
     "ABBANDONA - Ti arrendi nella partita corrente ma resti connesso\n"
     "ESCI - Esci dal gioco (solo quando non sei in partita)\n";
 
-static void aggiorna_entry_client_per_socket(int socket, DatiClient* client) {
+static void aggiorna_entry_client_per_socket(int socket, DatiClient* client) {  //scrive un puntatore in una cella dell'array globale
     if (socket >= 0 && socket < MAX_SOCKET_TRACCIATI) {
         atomic_store(&client_per_socket[socket], client);
     }
@@ -29,21 +29,21 @@ static void chiudi_e_libera_client(DatiClient* client) {
     if (client == NULL) {
         return;
     }
-    aggiorna_entry_client_per_socket(client->socket, NULL);
-    if (client->socket >= 0) {
-        close(client->socket);
+    aggiorna_entry_client_per_socket(client->socket, NULL); //rimuove il client dall'array globale: imposta client_per_socket[fd] = NULL
+    if (client->socket >= 0) { //chiude la socket: libera il file descriptor nele sistema operativo
+        close(client->socket); 
     }
-    free(client);
+    free(client);//libera la memoria: il free che bilancia il malloc del main
 }
 
-DatiClient* trova_client_attivo_per_socket(int socket) {
+DatiClient* trova_client_attivo_per_socket(int socket) {    //lettura atomica dell'array
     if (socket < 0 || socket >= MAX_SOCKET_TRACCIATI) {
         return NULL;
     }
     return atomic_load(&client_per_socket[socket]);
 }
 
-void aggiorna_id_partita_client_per_socket(int socket, int id_partita) {
+void aggiorna_id_partita_client_per_socket(int socket, int id_partita) {    //cerca il client e aggiorna atomicamente il suo id_partita_corrente
     DatiClient* client = trova_client_attivo_per_socket(socket);
     if (client != NULL) {
         atomic_store(&client->id_partita_corrente, id_partita);
@@ -51,12 +51,12 @@ void aggiorna_id_partita_client_per_socket(int socket, int id_partita) {
 }
 
 void* gestisci_client(void* arg) {
-    DatiClient* client = (DatiClient*)arg;
-    char buffer[DIM_BUFFER];
+    DatiClient* client = (DatiClient*)arg;  //recupera il puntatore originale
+    char buffer[DIM_BUFFER]; //array locale sullo stack del thread
 
     aggiorna_entry_client_per_socket(client->socket, client);
 
-    printf("Client connesso (socket: %d)\n", client->socket);
+    printf("Client connesso (socaket: %d)\n", client->socket);
 
     invia_messaggio(client->socket, "Benvenuto a Forza 4!\n");
     invia_messaggio(client->socket, "Inserisci il tuo nome:\n");
